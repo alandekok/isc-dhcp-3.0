@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.50 2001/04/20 19:58:42 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.2 2001/05/05 04:19:30 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -306,12 +306,9 @@ isc_result_t dhcp_failover_link_signal (omapi_object_t *h,
 
 		/* Make the transition. */
 		if (state -> link_to_peer == link) {
-			dhcp_failover_state_transition (link -> state_object,
-							name);
-		}
+		    dhcp_failover_state_transition (link -> state_object,
+						    name);
 
-		if (state -> link_to_peer == link ||
-		    !state -> link_to_peer) {
 		    /* Start trying to reconnect. */
 		    add_timeout (cur_time + 5, dhcp_failover_reconnect,
 				 state,
@@ -1366,6 +1363,7 @@ isc_result_t dhcp_failover_state_transition (dhcp_failover_state_t *state,
 		      case resolution_interrupted:
 		      case partner_down:
 		      case communications_interrupted:
+		      case recover:
 			/* Already in the right state? */
 			if (state -> me.state == startup)
 				return (dhcp_failover_set_state
@@ -1376,14 +1374,6 @@ isc_result_t dhcp_failover_state_transition (dhcp_failover_state_t *state,
 			return dhcp_failover_set_state
 				(state, resolution_interrupted);
 				
-		      case recover:
-			/* XXX I don't think it makes sense to make a
-			   XXX transition from recover to communications-
-			   XXX interrupted, because then when the connect
-			   XXX occurred, we'd make a transition into
-			   XXX normal, not recover. */
-			break;	/* Kim says stay in recover. */
-
 		      case normal:
 			return dhcp_failover_set_state
 				(state, communications_interrupted);
@@ -1536,6 +1526,9 @@ isc_result_t dhcp_failover_set_state (dhcp_failover_state_t *state,
 {
     enum failover_state saved_state;
     TIME saved_stos;
+    struct pool *p;
+    struct shared_network *s;
+    struct lease *l;
 
     /* First make the transition out of the current state. */
     switch (state -> me.state) {
@@ -1656,6 +1649,32 @@ isc_result_t dhcp_failover_set_state (dhcp_failover_state_t *state,
 				 omapi_object_dereference);
 	    break;
 	    
+	  case recover:
+	    if (state -> link_to_peer)
+		    dhcp_failover_send_update_request_all (state);
+	    break;
+
+	  case partner_down:
+	    /* For every expired lease, set a timeout for it to become free. */
+            for (s = shared_networks; s; s = s -> next) {
+                for (p = s -> pools; p; p = p -> next) {
+		    if (p -> failover_peer == state) {
+			for (l = p -> expired; l; l = l -> next)
+			    l -> tsfp = state -> me.stos + state -> mclt;
+			if (p -> next_event_time >
+			    state -> me.stos + state -> mclt) {
+			    p -> next_event_time =
+					state -> me.stos + state -> mclt;
+		            add_timeout (p -> next_event_time, pool_timer, p,
+		                         (tvref_t)pool_reference,
+               				 (tvunref_t)pool_dereference);
+			}
+		    }
+		}
+	    }
+	    break;
+			 	
+
 	  default:
 	    break;
     }
@@ -1730,9 +1749,16 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 		      case communications_interrupted:
 			break;
 
+		      case partner_down:
+			if (state -> me.state == startup)
+				dhcp_failover_set_state (state, recover);
+			else
+				dhcp_failover_set_state (state,
+							 potential_conflict);
+			break;
+
 		      case potential_conflict:
 		      case resolution_interrupted:
-		      case partner_down:
 			/* None of these transitions should ever occur. */
 			dhcp_failover_set_state (state, shut_down);
 			break;
@@ -1769,7 +1795,11 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 		      case recover:
 			log_info ("failover peer %s: requesting %s",
 				  state -> name, "full update from peer");
-			dhcp_failover_send_update_request_all (state);
+			/* Don't send updreqall if we're really in the
+			   startup state, because that will result in two
+			   being sent. */
+			if (state -> me.state == recover)
+				dhcp_failover_send_update_request_all (state);
 			break;
 
 		      case potential_conflict:
@@ -1850,10 +1880,10 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 		switch (new_state) {
 			/* This is where we should be. */
 		      case recover:
+		      case recover_wait:
 			break;
 
 		      case recover_done:
-		      case recover_wait:
 			dhcp_failover_set_state (state, normal);
 			break;
 
@@ -2129,9 +2159,7 @@ isc_result_t dhcp_failover_send_updates (dhcp_failover_state_t *state)
 	isc_result_t status;
 
 	/* Can't update peer if we're not talking to it! */
-	if (state -> me.state != normal &&
-	    state -> me.state != recover &&
-	    state -> me.state != potential_conflict)
+	if (!state -> link_to_peer)
 		return ISC_R_SUCCESS;
 
 	while ((state -> partner.max_flying_updates >
@@ -2296,7 +2324,6 @@ int dhcp_failover_queue_ack (dhcp_failover_state_t *state,
 			     (tvunref_t)dhcp_failover_state_dereference);
 	}
 
-
 	return 1;
 }
 
@@ -2369,8 +2396,6 @@ isc_result_t dhcp_failover_state_set_value (omapi_object_t *h,
 	   you try to change the local state. */
 
 	if (!omapi_ds_strcmp (name, "name")) {
-		return ISC_R_SUCCESS;
-	} else if (!omapi_ds_strcmp (name, "peer_name")) {
 		return ISC_R_SUCCESS;
 	} else if (!omapi_ds_strcmp (name, "partner-address")) {
 		return ISC_R_SUCCESS;
@@ -2855,7 +2880,7 @@ isc_result_t dhcp_failover_state_lookup (omapi_object_t **sp,
 	}
 
 	/* Look the failover state up by peer name. */
-	status = omapi_get_value_str (ref, id, "peer_name", &tv);
+	status = omapi_get_value_str (ref, id, "name", &tv);
 	if (status == ISC_R_SUCCESS) {
 		for (s = failover_states; s; s = s -> next) {
 			unsigned l = strlen (s -> name);
@@ -4225,13 +4250,13 @@ isc_result_t dhcp_failover_process_bind_update (dhcp_failover_state_t *state,
 		if (state -> me.state == normal) {
 			new_binding_state =
 				(normal_binding_state_transition_check
-				 (lease, state,
-				  msg -> binding_status));
+				 (lease, state, msg -> binding_status,
+				  msg -> potential_expiry));
 		} else {
 			new_binding_state =
 				(conflict_binding_state_transition_check
-				 (lease, state,
-				  msg -> binding_status));
+				 (lease, state, msg -> binding_status,
+				  msg -> potential_expiry));
 		}
 		if (new_binding_state != msg -> binding_status) {
 			char outbuf [100];
@@ -4309,8 +4334,20 @@ isc_result_t dhcp_failover_process_bind_ack (dhcp_failover_state_t *state,
 	if (msg -> options_present & FTB_POTENTIAL_EXPIRY) {
 		/* XXX it could be a problem to do this directly if the
 		   XXX lease is sorted by tsfp. */
-		lease -> tsfp = msg -> potential_expiry;
-		write_lease (lease);
+		if (lease -> binding_state == FTS_EXPIRED) {
+			lease -> next_binding_state = FTS_FREE;
+		    supersede_lease (lease, (struct lease *)0, 0, 1, 0);
+		    write_lease (lease);
+		    if (state -> me.state == normal)
+			commit_leases ();
+		} else {
+		    lease -> tsfp = msg -> potential_expiry;
+		    write_lease (lease);
+#if 0 /* XXX This might be needed. */
+		    if (state -> me.state == normal)
+			commit_leases ();
+#endif
+		}
 	}
 
       unqueue:
@@ -4491,7 +4528,14 @@ dhcp_failover_process_update_done (dhcp_failover_state_t *state,
 		break;
 
 	      case recover:
-		if (state -> me.stos + state -> mclt > cur_time) {
+		/* Wait for MCLT to expire before moving to recover_done,
+		   except that if both peers come up in recover, there is
+		   no point in waiting for MCLT to expire - this probably
+		   indicates the initial startup of a newly-configured
+		   failover pair. */
+		if (state -> me.stos + state -> mclt > cur_time &&
+		    state -> partner.state != recover &&
+		    state -> partner.state != recover_done) {
 			dhcp_failover_set_state (state, recover_wait);
 			add_timeout ((int)(state -> me.stos + state -> mclt),
 				     dhcp_failover_recover_done,
@@ -4623,7 +4667,8 @@ int load_balance_mine (struct packet *packet, dhcp_failover_state_t *state)
 binding_state_t
 normal_binding_state_transition_check (struct lease *lease,
 				       dhcp_failover_state_t *state,
-				       binding_state_t binding_state)
+				       binding_state_t binding_state,
+				       u_int32_t tsfp)
 {
 	binding_state_t new_state;
 
@@ -4672,8 +4717,7 @@ normal_binding_state_transition_check (struct lease *lease,
 		      case FTS_BACKUP:
 			/* Can't set a lease to free or backup until the
 			   peer agrees that it's expired. */
-			/* XXX but have we updated tsfp yet? */
-			if (lease -> tsfp > cur_time) {
+			if (tsfp > cur_time) {
 				new_state = lease -> binding_state;
 				goto out;
 			}
@@ -4700,8 +4744,7 @@ normal_binding_state_transition_check (struct lease *lease,
 		      case FTS_BACKUP:
 			/* Can't set a lease to free or backup until the
 			   peer agrees that it's expired. */
-			/* XXX but have we updated tsfp yet? */
-			if (lease -> tsfp > cur_time) {
+			if (tsfp > cur_time) {
 				new_state = lease -> binding_state;
 				goto out;
 			}
@@ -4722,8 +4765,7 @@ normal_binding_state_transition_check (struct lease *lease,
 		      case FTS_BACKUP:
 			/* Can't set a lease to free or backup until the
 			   peer agrees that it's expired. */
-			/* XXX but have we updated tsfp yet? */
-			if (lease -> tsfp > cur_time) {
+			if (tsfp > cur_time) {
 				new_state = lease -> binding_state;
 				goto out;
 			}
@@ -4742,10 +4784,9 @@ normal_binding_state_transition_check (struct lease *lease,
 		switch (binding_state) {
 		      case FTS_FREE:
 		      case FTS_BACKUP:
-			/* XXX but have we updated tsfp yet? */
 			/* Can't set a lease to free or backup until the
 			   peer agrees that it's expired. */
-			if (lease -> tsfp > cur_time) {
+			if (tsfp > cur_time) {
 				new_state = lease -> binding_state;
 				goto out;
 			}
@@ -4795,7 +4836,8 @@ normal_binding_state_transition_check (struct lease *lease,
 binding_state_t
 conflict_binding_state_transition_check (struct lease *lease,
 					 dhcp_failover_state_t *state,
-					 binding_state_t binding_state)
+					 binding_state_t binding_state,
+					 u_int32_t tsfp)
 {
 	binding_state_t new_state;
 
