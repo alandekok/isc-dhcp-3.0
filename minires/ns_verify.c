@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999 by Internet Software Consortium, Inc.
+ * Copyright (c) 1999-2001 by Internet Software Consortium, Inc.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,8 +16,10 @@
  */
 
 #ifndef lint
-static const char rcsid[] = "$Id: ns_verify.c,v 1.3 2001/01/16 22:33:11 mellon Exp $";
+static const char rcsid[] = "$Id: ns_verify.c,v 1.5 2001/02/22 07:28:22 mellon Exp $";
 #endif
+
+#define time(x)		trace_mr_time (x)
 
 /* Import. */
 
@@ -39,6 +41,8 @@ static const char rcsid[] = "$Id: ns_verify.c,v 1.3 2001/01/16 22:33:11 mellon E
 #include "minires/minires.h"
 #include "arpa/nameser.h"
 #include <isc/dst.h>
+
+time_t trace_mr_time (time_t *);
 
 /* Private. */
 

@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: mdb.c,v 1.51 2001/01/25 08:36:36 mellon Exp $ Copyright (c) 1996-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: mdb.c,v 1.53 2001/02/15 21:34:07 neild Exp $ Copyright (c) 1996-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -775,6 +775,14 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 	struct lease *lp, **lq, *prev;
 	TIME lp_next_state;
 
+#if defined (FAILOVER_PROTOCOL)
+	/* We must commit leases before sending updates regarding them
+	   to failover peers.  It is, therefore, an error to set pimmediate
+	   and not commit. */
+	if (pimmediate && !commit)
+		return 0;
+#endif
+
 	/* If there is no sample lease, just do the move. */
 	if (!lease)
 		goto just_move_it;
@@ -851,19 +859,21 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 				lease -> uid, lease -> uid_len);
 			comp -> uid = &comp -> uid_buf [0];
 			comp -> uid_max = sizeof comp -> uid_buf;
+			comp -> uid_len = lease -> uid_len;
 		} else if (lease -> uid != &lease -> uid_buf [0]) {
 			comp -> uid = lease -> uid;
 			comp -> uid_max = lease -> uid_max;
 			lease -> uid = (unsigned char *)0;
 			lease -> uid_max = 0;
+			comp -> uid_len = lease -> uid_len;
+			lease -> uid_len = 0;
 		} else {
 			log_fatal ("corrupt lease uid."); /* XXX */
 		}
 	} else {
 		comp -> uid = (unsigned char *)0;
-		comp -> uid_max = 0;
+		comp -> uid_len = comp -> uid_max = 0;
 	}
-	comp -> uid_len = lease -> uid_len;
 	if (comp -> host)
 		host_dereference (&comp -> host, MDL);
 	host_reference (&comp -> host, lease -> host, MDL);
@@ -893,10 +903,6 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 	}
 
 	/* Record the hostname information in the lease. */
-	if (comp -> hostname)
-		dfree (comp -> hostname, MDL);
-	comp -> hostname = lease -> hostname;
-	lease -> hostname = (char *)0;
 	if (comp -> client_hostname)
 		dfree (comp -> client_hostname, MDL);
 	comp -> client_hostname = lease -> client_hostname;
@@ -1049,14 +1055,21 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 			     (tvunref_t)pool_dereference);
 	}
 
-	/* Return zero if we didn't commit the lease to permanent storage;
-	   nonzero if we did. */
-	return commit && write_lease (comp) && commit_leases ()
+	if (commit) {
+		if (!write_lease (comp))
+			return 0;
+		if (!commit_leases ())
+			return 0;
+	}
+
 #if defined (FAILOVER_PROTOCOL)
-		&& (!propogate ||
-		    dhcp_failover_queue_update (comp, pimmediate))
+	if (propogate) {
+		if (!dhcp_failover_queue_update (comp, pimmediate))
+			return 0;
+	}
 #endif
-		;
+
+	return 1;
 }
 
 void process_state_transition (struct lease *lease)
@@ -1185,14 +1198,6 @@ int lease_copy (struct lease **lp,
 			return 0;
 		}
 		memcpy (lt -> uid, lease -> uid, lease -> uid_max);
-	}
-	if (lease -> hostname) {
-		lt -> hostname = dmalloc (strlen (lease -> hostname) + 1, MDL);
-		if (!lt -> hostname) {
-			lease_dereference (&lt, MDL);
-			return 0;
-		}
-		strcpy (lt -> hostname, lease -> hostname);
 	}
 	if (lease -> client_hostname) {
 		lt -> client_hostname =

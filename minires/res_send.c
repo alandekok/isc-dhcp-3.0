@@ -52,7 +52,7 @@
  */
 
 /*
- * Portions Copyright (c) 1996-1999 by Internet Software Consortium.
+ * Portions Copyright (c) 1996-2001 by Internet Software Consortium.
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -70,8 +70,19 @@
 
 #if defined(LIBC_SCCS) && !defined(lint)
 static const char sccsid[] = "@(#)res_send.c	8.1 (Berkeley) 6/4/93";
-static const char rcsid[] = "$Id: res_send.c,v 1.5 2001/01/16 22:33:16 mellon Exp $";
+static const char rcsid[] = "$Id: res_send.c,v 1.7 2001/02/22 07:28:25 mellon Exp $";
 #endif /* LIBC_SCCS and not lint */
+
+/* Rename the I/O functions in case we're tracing. */
+#define send		trace_mr_send
+#define recvfrom	trace_mr_recvfrom
+#define	read		trace_mr_read
+#define connect		trace_mr_connect
+#define socket		trace_mr_socket
+#define bind		trace_mr_bind
+#define close		trace_mr_close
+#define select		trace_mr_select
+#define time		trace_mr_time
 
 /*
  * Send query to name server and wait for reply.
@@ -251,6 +262,10 @@ res_nsend(res_state statp,
 			statp->nsaddr_list[ns] = statp->nsaddr_list[ns + 1];
 		statp->nsaddr_list[lastns] = ina;
 	}
+
+#if defined (TRACING)
+	trace_mr_statp_setup (statp);
+#endif
 
 	/*
 	 * Send request, RETRY times, or until successful
