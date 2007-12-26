@@ -1,6 +1,6 @@
 	      Internet Systems Consortium DHCP Distribution
-			    Version 3.0.5rc1
-			     August 8, 2006
+			    Version 3.0.5rc2
+			     August 24, 2006
 
 			     Release Notes
 
@@ -79,9 +79,16 @@ thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
 
 
-			Changes since 3.0.5b1
+			Changes since 3.0.5rc1
 
-* There have been no changes, cosmetic or otherwise, since 3.0.5b1.
+- A bug was repaired in fixes to the dhclient which saught to run the
+  dhclient-script with the 'EXPIRE' state should it receive a NAK in
+  response to a REQUEST.  The client now iterates the PREINIT state
+  after the EXPIRE state, so that interfaces that might be configured
+  'down' can be brought back 'up' and initialized.
+
+- DHCPINFORM handling for clients that properly set ciaddr and come to the
+  server via a relay agent has been repaired.
 
 			Changes since 3.0.4
 
