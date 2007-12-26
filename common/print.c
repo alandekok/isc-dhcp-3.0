@@ -3,7 +3,7 @@
    Turn data structures into printable text. */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
+ * Copyright (c) 1995-2001 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: print.c,v 1.53.2.7 2002/11/17 02:26:59 dhankins Exp $ Copyright (c) 1995-2002 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: print.c,v 1.53.2.4.2.1 2002/04/30 04:35:37 murray Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1197,14 +1197,6 @@ void print_dns_status (int status, ns_updque *uq)
 			}
 			predicate = "and";
 		}
-		if (u -> r_dname) {
-			if (s + 1 < end)
-				*s++ = ' ';
-			if (s + strlen (u -> r_dname) < end) {
-				strcpy (s, u -> r_dname);
-				s += strlen (s);
-			}
-		}
 		if (ttlp) {
 			if (s + 1 < end)
 				*s++ = ' ';
@@ -1260,6 +1252,14 @@ void print_dns_status (int status, ns_updque *uq)
 				*s++ = ' ';
 			strcpy (s, en);
 			s += strlen (en);
+		}
+		if (u -> r_dname) {
+			if (s + 1 < end)
+				*s++ = ' ';
+			if (s + strlen (u -> r_dname) < end) {
+				strcpy (s, u -> r_dname);
+				s += strlen (s);
+			}
 		}
 		if (u -> r_data) {
 			if (s + 1 < end)

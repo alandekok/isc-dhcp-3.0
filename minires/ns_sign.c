@@ -16,7 +16,7 @@
  */
 
 #ifndef lint
-static const char rcsid[] = "$Id: ns_sign.c,v 1.4.2.3 2003/01/14 23:15:06 dhankins Exp $";
+static const char rcsid[] = "$Id: ns_sign.c,v 1.4.2.1.2.2 2003/01/14 23:02:24 dhankins Exp $";
 #endif
 
 #if defined (TRACING)

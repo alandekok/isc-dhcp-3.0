@@ -1,6 +1,6 @@
 .\"	dhclient.conf.5
 .\"
-.\" Copyright (c) 1996-2002 Internet Software Consortium.
+.\" Copyright (c) 1996-2001 Internet Software Consortium.
 .\" Redistribution and use in source and binary forms, with or without
 .\" modification, are permitted provided that the following conditions
 .\" are met:
@@ -34,9 +34,6 @@
 .\" ``http://www.isc.org/''.  To learn more about Vixie Enterprises,
 .\" see ``http://www.vix.com''.   To learn more about Nominum, Inc., see
 .\" ``http://www.nominum.com''.
-.\"
-.\" $Id: dhclient.conf.5,v 1.12.2.8 2002/11/17 02:25:43 dhankins Exp $
-.\"
 .TH dhclient.conf 5
 .SH NAME
 dhclient.conf - DHCP client configuration file
@@ -250,22 +247,6 @@ The \fIfqdn.fqdn\fR option \fBMUST\fR be a fully-qualified domain
 name.   You \fBMUST\fR define a zone statement for the zone to be
 updated.   The \fIfqdn.encoded\fR option may need to be set to
 \fIon\fR or \fIoff\fR, depending on the DHCP server you are using.
-.PP
-.I The
-.B do-forward-updates
-.I statement
-.PP
- \fBdo-forward-updates [ \fIflag\fR ] \fB;\fR
-.PP
-If you want to do DNS updates in the DHCP client
-script (see \fBdhclient-script(8)\fR) rather than having the
-DHCP client do the update directly (for example, if you want to
-use SIG(0) authentication, which is not supported directly by the
-DHCP client, you can instruct the client not to do the update using
-the \fBdo-forward-updates\fR statement.   \fIFlag\fR should be \fBtrue\fR
-if you want the DHCP client to do the update, and \fBfalse\fR if
-you don't want the DHCP client to do the update.   By default, the DHCP
-client will do the DNS update.
 .SH OPTION MODIFIERS
 In some cases, a client may receive option data from the server which
 is not really appropriate for that client, or may not receive
@@ -338,7 +319,7 @@ enforced - if you ignore it, the behaviour will be unpredictable.
  \fBlease {\fR \fIlease-declaration\fR [ ... \fIlease-declaration ] \fB}\fR
 .PP
 The DHCP client may decide after some period of time (see \fBPROTOCOL
-TIMING\fR) that it is not going to succeed in contacting a
+TIMING\fR) decide that it is not going to succeed in contacting a
 server.   At that time, it consults its own database of old leases and
 tests each one that has not yet timed out by pinging the listed router
 for that lease to see if that lease could work.   It is possible to
@@ -449,7 +430,7 @@ initializing the interface.  On Unix and Unix-like systems, the
 argument is passed on the ifconfig command line when configuring te
 interface.
 .PP
-The dhcp client automatically declares this parameter if it uses a
+The dhcp client automatically declares this parameter if it used a
 media type (see the
 .B media
 statement) when configuring the interface in order to obtain a lease.
@@ -512,9 +493,7 @@ declaration.
 .SH OTHER DECLARATIONS
  \fBreject \fIip-address\fB;\fR
 .PP
-The
-.B reject
-statement causes the DHCP client to reject offers from
+The reject statement causes the DHCP client to reject offers from
 servers who use the specified address as a server identifier.   This
 can be used to avoid being configured by rogue or misconfigured dhcp
 servers, although it should be a last resort - better to track down
@@ -541,7 +520,7 @@ A pseudo-interface is just another state machine running on the
 interface named \fIreal-name\fR, with its own lease and its own
 state.   If you use this feature, you must provide a client identifier
 for both the pseudo-interface and the actual interface, and the two
-identifiers must be different.   You must also provide a separate
+identifiers must be different.   You must also provide a seperate
 client script for the pseudo-interface to do what you want with the IP
 address.   For example:
 .PP
@@ -575,7 +554,7 @@ succeeds in getting a request to the server and hearing the reply is
 probably right (no guarantees).
 .PP
 The media setup is only used for the initial phase of address
-acquisition (the DHCPDISCOVER and DHCPOFFER packets).   Once an
+acquisition (the DHCPDISCOVER and DHCPOFFER packtes).   Once an
 address has been acquired, the dhcp client will record it in its lease
 database and will record the media type used to acquire the address.
 Whenever the client tries to renew the lease, it will use that same
@@ -607,7 +586,7 @@ interface "ep0" {
     request subnet-mask, broadcast-address, time-offset, routers,
 	    domain-name, domain-name-servers, host-name;
     require subnet-mask, domain-name-servers;
-    script "CLIENTBINDIR/dhclient-script";
+    script "/etc/dhclient-script";
     media "media 10baseT/UTP", "media 10base2/BNC";
 }
 

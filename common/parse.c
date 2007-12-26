@@ -3,7 +3,7 @@
    Common parser code for dhcpd and dhclient. */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
+ * Copyright (c) 1995-2001 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: parse.c,v 1.104.2.12 2002/11/17 02:58:34 dhankins Exp $ Copyright (c) 1995-2002 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: parse.c,v 1.104.2.6 2001/06/26 18:33:32 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -329,7 +329,7 @@ int parse_ip_addr (cfile, addr)
 
 /*
  * hardware-parameter :== HARDWARE hardware-type colon-seperated-hex-list SEMI
- * hardware-type :== ETHERNET | TOKEN_RING | FDDI
+ * hardware-type :== ETHERNET | TOKEN_RING
  */
 
 void parse_hardware_param (cfile, hardware)
@@ -975,7 +975,7 @@ void parse_option_space_decl (cfile)
 		universes = ua;
 	}
 	universes [nu -> index] = nu;
-	option_new_hash (&nu -> hash, 1, MDL);
+	nu -> hash = new_hash (0, 0, 1, MDL);
 	if (!nu -> hash)
 		log_fatal ("Can't allocate %s option hash table.", nu -> name);
 	universe_hash_add (universe_hash, nu -> name, 0, nu, MDL);
@@ -1804,11 +1804,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 				executable_statement_dereference (result, MDL);
 				return 0;
 			}
-			if (!parse_semi (cfile)) {
-				*lose = 1;
-				executable_statement_dereference (result, MDL);
-				return 0;
-			}
+			parse_semi (cfile);
 		}
 		break;
 
@@ -1832,11 +1828,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 		if (!(*result)->data.unset)
 			log_fatal ("can't allocate variable name");
 		strcpy ((*result) -> data.unset, val);
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-			return 0;
-		}
+		parse_semi (cfile);
 		break;
 
 	      case EVAL:
@@ -1858,10 +1850,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			executable_statement_dereference (result, MDL);
 			return 0;
 		}
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-		}
+		parse_semi (cfile);
 		break;
 
 	      case RETURN:
@@ -1883,11 +1872,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			executable_statement_dereference (result, MDL);
 			return 0;
 		}
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-			return 0;
-		}
+		parse_semi (cfile);
 		break;
 
 	      case LOG:
@@ -1964,8 +1949,8 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			log_fatal ("no memory for new zone.");
 		zone -> name = parse_host_name (cfile);
 		if (!zone -> name) {
-			parse_warn (cfile, "expecting hostname.");
 		      badzone:
+			parse_warn (cfile, "expecting hostname.");
 			*lose = 1;
 			skip_to_semi (cfile);
 			dns_zone_dereference (&zone, MDL);
@@ -1974,10 +1959,8 @@ int parse_executable_statement (result, cfile, lose, case_context)
 		i = strlen (zone -> name);
 		if (zone -> name [i - 1] != '.') {
 			s = dmalloc ((unsigned)i + 2, MDL);
-			if (!s) {
-				parse_warn (cfile, "no trailing '.' on zone");
+			if (!s)
 				goto badzone;
-			}
 			strcpy (s, zone -> name);
 			s [i] = '.';
 			s [i + 1] = 0;
@@ -1988,8 +1971,10 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			goto badzone;
 		status = enter_dns_zone (zone);
 		if (status != ISC_R_SUCCESS) {
-			parse_warn (cfile, "dns zone key %s: %s",
-				    zone -> name, isc_result_totext (status));
+			if (parse_semi (cfile))
+				parse_warn (cfile, "dns zone key %s: %s",
+					    zone -> name,
+					    isc_result_totext (status));
 			dns_zone_dereference (&zone, MDL);
 			return 0;
 		}
@@ -2039,11 +2024,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 				executable_statement_dereference (result, MDL);
 				return 0;
 			}
-			if (!parse_semi (cfile)) {
-				*lose = 1;
-				executable_statement_dereference (result, MDL);
-				return 0;
-			}
+			parse_semi (cfile);
 			break;
 		}
 
@@ -3973,51 +3954,83 @@ int parse_expression (expr, cfile, lose, context, plhs, binop)
 	      case AND:
 		next_op = expr_and;
 		context = expression_context (rhs);
+		if (context != context_boolean) {
+		      needbool:
+			parse_warn (cfile, "expecting boolean expressions");
+			skip_to_semi (cfile);
+			expression_dereference (&rhs, MDL);
+			*lose = 1;
+			return 0;
+		}
 		break;
 
 	      case OR:
 		next_op = expr_or;
 		context = expression_context (rhs);
+		if (context != context_boolean)
+			goto needbool;
 		break;
 
 	      case PLUS:
 		next_op = expr_add;
 		context = expression_context (rhs);
+		if (context != context_numeric) {
+		      neednum:
+			parse_warn (cfile, "expecting numeric expressions");
+			skip_to_semi (cfile);
+			expression_dereference (&rhs, MDL);
+			*lose = 1;
+			return 0;
+		}
 		break;
 
 	      case MINUS:
 		next_op = expr_subtract;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case SLASH:
 		next_op = expr_divide;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case ASTERISK:
 		next_op = expr_multiply;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case PERCENT:
 		next_op = expr_remainder;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case AMPERSAND:
 		next_op = expr_binary_and;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case PIPE:
 		next_op = expr_binary_or;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case CARET:
 		next_op = expr_binary_xor;
 		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      default:
@@ -4037,63 +4050,6 @@ int parse_expression (expr, cfile, lose, context, plhs, binop)
 		binop = next_op;
 		next_token (&val, (unsigned *)0, cfile);
 		goto new_rhs;
-	}
-
-	if (binop != expr_none) {
-	  if (expression_context (rhs) != expression_context (lhs)) {
-	    parse_warn (cfile, "illegal expression relating different types");
-	    skip_to_semi (cfile);
-	    expression_dereference (&rhs, MDL);
-	    expression_dereference (&lhs, MDL);
-	    *lose = 1;
-	    return 0;
-	  }
-
-	  switch(binop) {
-	    case expr_not_equal:
-	    case expr_equal:
-		if ((expression_context(rhs) != context_data_or_numeric) &&
-		    (expression_context(rhs) != context_data) &&
-		    (expression_context(rhs) != context_numeric)) {
-			parse_warn (cfile, "expecting data/numeric expression");
-			skip_to_semi (cfile);
-			expression_dereference (&rhs, MDL);
-			*lose = 1;
-			return 0;
-		}
-		break;
-
-	    case expr_and:
-	    case expr_or:
-		if (expression_context(rhs) != context_boolean) {
-			parse_warn (cfile, "expecting boolean expressions");
-			skip_to_semi (cfile);
-			expression_dereference (&rhs, MDL);
-			*lose = 1;
-			return 0;
-		}
-		break;
-
-	    case expr_add:
-	    case expr_subtract:
-	    case expr_divide:
-	    case expr_multiply:
-	    case expr_remainder:
-	    case expr_binary_and:
-	    case expr_binary_or:
-	    case expr_binary_xor:
-		if (expression_context(rhs) != context_numeric) {
-			parse_warn (cfile, "expecting numeric expressions");
-                        skip_to_semi (cfile);
-                        expression_dereference (&rhs, MDL);
-                        *lose = 1;
-                        return 0;
-		}
-		break;
-
-	    default:
-		break;
-	  }
 	}
 
 	/* Now, if we didn't find a binary operator, we're done parsing

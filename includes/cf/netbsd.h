@@ -97,7 +97,7 @@ extern int h_errno;
 #  define USE_BPF
 #endif
 
-#if defined (__alpha__) || defined (__sparc64__)
+#ifdef __alpha__
 #define PTRSIZE_64BIT
 #endif
 

@@ -3,7 +3,7 @@
    Network input dispatcher... */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
+ * Copyright (c) 1995-2001 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: discover.c,v 1.42.2.13 2002/11/17 02:26:57 dhankins Exp $ Copyright (c) 1995-2002 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: discover.c,v 1.42.2.7 2001/06/21 16:46:09 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -94,7 +94,7 @@ isc_result_t interface_setup ()
 					     dhcp_interface_remove,
 					     0, 0, 0,
 					     sizeof (struct interface_info),
-					     interface_initialize, RC_MISC);
+					     interface_initialize);
 	if (status != ISC_R_SUCCESS)
 		log_fatal ("Can't register interface object type: %s",
 			   isc_result_totext (status));
@@ -407,11 +407,8 @@ void discover_interfaces (state)
 					   name, isc_result_totext (status));
 			tmp -> flags = ir;
 			strncpy (tmp -> name, name, IFNAMSIZ);
-			if (interfaces) {
-				interface_reference (&tmp -> next,
-						     interfaces, MDL);
-				interface_dereference (&interfaces, MDL);
-			}
+			interface_reference (&tmp -> next, interfaces, MDL);
+			interface_dereference (&interfaces, MDL);
 			interface_reference (&interfaces, tmp, MDL);
 			interface_dereference (&tmp, MDL);
 			tmp = interfaces;
@@ -540,12 +537,8 @@ void discover_interfaces (state)
 		if (tmp -> next)
 			interface_reference (&next, tmp -> next, MDL);
 		/* skip interfaces that are running already */
-		if (tmp -> flags & INTERFACE_RUNNING) {
-			interface_dereference(&tmp, MDL);
-			if(next)
-				interface_reference(&tmp, next, MDL);
+		if (tmp -> flags & INTERFACE_RUNNING)
 			continue;
-		}
 		if ((tmp -> flags & INTERFACE_AUTOMATIC) &&
 		    state == DISCOVER_REQUESTED)
 			tmp -> flags &= ~(INTERFACE_AUTOMATIC |
