@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: bootp.c,v 1.42 1999/03/30 18:12:34 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: bootp.c,v 1.44 1999/04/08 19:36:23 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -38,7 +38,7 @@ void bootp (packet)
 	struct sockaddr_in to;
 	struct in_addr from;
 	struct hardware hto;
-	struct option_state options;
+	struct option_state *options = (struct option_state *)0;
 	struct subnet *subnet;
 	struct lease *lease;
 	struct iaddr ip_address;
@@ -114,30 +114,33 @@ void bootp (packet)
 
 	/* Run the executable statements to compute the client and server
 	   options. */
-
-	memset (&options, 0, sizeof options);
+	option_state_allocate (&options, "bootrequest");
 	
 	/* Execute the subnet statements. */
-	execute_statements_in_scope (packet, &options, &options,
+	execute_statements_in_scope (packet, options, options,
 				     lease -> subnet -> group,
 				     (struct group *)0);
 	
 	/* Execute the host statements. */
-	execute_statements_in_scope (packet, &options, &options, hp -> group,
+	execute_statements_in_scope (packet, options, options, hp -> group,
 				     lease -> subnet -> group);
 	
 	/* Drop the request if it's not allowed for this client. */
-	if (evaluate_boolean_option_cache (packet, &options,
-					   lookup_option (options.dhcp_hash,
+	if (evaluate_boolean_option_cache (packet, options,
+					   lookup_option (&dhcp_universe,
+							  options,
 							  SV_ALLOW_BOOTP))) {
 		log_info ("%s: bootp disallowed", msgbuf);
+		option_state_dereference (&options, "bootrequest");
 		return;
 	} 
 
-	if (evaluate_boolean_option_cache (packet, &options,
-					   lookup_option (options.dhcp_hash,
+	if (evaluate_boolean_option_cache (packet, options,
+					   lookup_option (&dhcp_universe,
+							  options,
 							  SV_ALLOW_BOOTING))) {
 		log_info ("%s: booting disallowed", msgbuf);
+		option_state_dereference (&options, "bootrequest");
 		return;
 	}
 
@@ -148,18 +151,42 @@ void bootp (packet)
 
 	/* If we didn't get a known vendor magic number on the way in,
 	   just copy the input options to the output. */
-	if (!packet -> options_valid) {
+	if (!packet -> options_valid &&
+	    !(evaluate_boolean_option_cache
+	      (packet, options,
+	       lookup_option (&dhcp_universe, options,
+			      SV_ALWAYS_REPLY_RFC1048)))) {
 		memcpy (outgoing.raw -> options,
 			packet -> raw -> options, DHCP_OPTION_LEN);
 		outgoing.packet_length = BOOTP_MIN_LEN;
 	} else {
+
+		/* Use the subnet mask from the subnet declaration if no other
+		   mask has been provided. */
+
+		oc = (struct option_cache *)0;
+		i = DHO_SUBNET_MASK;
+		if (!lookup_option (&dhcp_universe, options, i)) {
+			if (option_cache_allocate (&oc, "ack_lease")) {
+				if (make_const_data
+				    (&oc -> expression,
+				     lease -> subnet -> netmask.iabuf,
+				     lease -> subnet -> netmask.len, 0, 0)) {
+					oc -> option =
+						dhcp_universe.options [i];
+					save_option (&dhcp_universe,
+						     options, oc);
+				}
+				option_cache_dereference (&oc, "ack_lease");
+			}
+		}
+
 		/* Pack the options into the buffer.  Unlike DHCP, we
 		   can't pack options into the filename and server
 		   name buffers. */
 
 		outgoing.packet_length =
-			cons_options (packet, outgoing.raw, 0,
-				      &options, (struct agent_options *)0,
+			cons_options (packet, outgoing.raw, 0, options,
 				      0, 0, 1, (struct data_string *)0);
 		if (outgoing.packet_length < BOOTP_MIN_LEN)
 			outgoing.packet_length = BOOTP_MIN_LEN;
@@ -181,9 +208,9 @@ void bootp (packet)
 	raw.siaddr = (lease -> subnet -> shared_network ->
 		      interface -> primary_address);
 	memset (&d1, 0, sizeof d1);
-	oc = lookup_option (options.dhcp_hash, SV_NEXT_SERVER);
+	oc = lookup_option (&dhcp_universe, options, SV_NEXT_SERVER);
 	if (oc &&
-	    evaluate_option_cache (&d1, packet, &options, oc)) {
+	    evaluate_option_cache (&d1, packet, options, oc)) {
 		/* If there was more than one answer, take the first. */
 		if (d1.len >= 4 && d1.data)
 			memcpy (&raw.siaddr, d1.data, 4);
@@ -193,9 +220,9 @@ void bootp (packet)
 	raw.giaddr = packet -> raw -> giaddr;
 
 	/* Figure out the filename. */
-	oc = lookup_option (options.dhcp_hash, SV_FILENAME);
+	oc = lookup_option (&dhcp_universe, options, SV_FILENAME);
 	if (oc &&
-	    evaluate_option_cache (&d1, packet, &options, oc)) {
+	    evaluate_option_cache (&d1, packet, options, oc)) {
 		memcpy (raw.file, d1.data,
 			d1.len > sizeof raw.file ? sizeof raw.file : d1.len);
 		if (sizeof raw.file > d1.len)
@@ -206,9 +233,9 @@ void bootp (packet)
 		memcpy (raw.file, packet -> raw -> file, sizeof raw.file);
 
 	/* Choose a server name as above. */
-	oc = lookup_option (options.dhcp_hash, SV_SERVER_NAME);
+	oc = lookup_option (&dhcp_universe, options, SV_SERVER_NAME);
 	if (oc &&
-	    evaluate_option_cache (&d1, packet, &options, oc)) {
+	    evaluate_option_cache (&d1, packet, options, oc)) {
 		memcpy (raw.sname, d1.data,
 			d1.len > sizeof raw.sname ? sizeof raw.sname : d1.len);
 		if (sizeof raw.sname > d1.len)
@@ -216,6 +243,9 @@ void bootp (packet)
 				0, (sizeof raw.sname) - d1.len);
 		data_string_forget (&d1, "bootrequest");
 	}
+
+	/* We're done with the option state. */
+	option_state_dereference (&options, "bootrequest");
 
 	/* Set up the hardware destination address... */
 	hto.htype = packet -> raw -> htype;
