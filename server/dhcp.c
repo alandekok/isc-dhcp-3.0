@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.35 2004/06/17 20:54:40 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.42 2004/09/30 14:56:16 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -244,9 +244,10 @@ void dhcpdiscover (packet, ms_nulltp)
 	struct lease *lease = (struct lease *)0;
 	char msgbuf [1024]; /* XXX */
 	TIME when;
-	char *s;
+	const char *s;
 	int allocatedp = 0;
 	int peer_has_leases = 0;
+	int alloc_lease_called = 0;
 #if defined (FAILOVER_PROTOCOL)
 	dhcp_failover_state_t *peer;
 #endif
@@ -336,6 +337,7 @@ void dhcpdiscover (packet, ms_nulltp)
 			dhcp_failover_pool_check (lease -> pool);
 #endif
 		allocatedp = 1;
+		alloc_lease_called = 1;
 	}
 
 #if defined (FAILOVER_PROTOCOL)
@@ -359,13 +361,18 @@ void dhcpdiscover (packet, ms_nulltp)
 	   XXX be forced to switch servers (and IP addresses) just because
 	   XXX of bad luck, when it's possible for it to get the address it
 	   XXX is requesting.    Not sure this is allowed.  */
-	if (allocatedp && peer) {
-		if (peer -> service_state == cooperating) {
-			if (!load_balance_mine (packet, peer)) {
-				log_debug ("%s: load balance to peer %s",
-					   msgbuf, peer -> name);
-				goto out;
-			}
+	if (allocatedp && peer && (peer -> service_state == cooperating) &&
+	    !load_balance_mine (packet, peer)) {
+		/* peer_has_leases only has a chance to be set if we called
+		 * allocate_lease() above.
+		 */
+		if (!alloc_lease_called || peer_has_leases) {
+			log_debug ("%s: load balance to peer %s",
+				   msgbuf, peer -> name);
+			goto out;
+		} else {
+			log_debug ("cancel load balance to peer %s - %s",
+				   peer -> name, "no free leases");
 		}
 	}
 #endif
@@ -400,7 +407,7 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 	struct data_string data;
 	int status;
 	char msgbuf [1024]; /* XXX */
-	char *s;
+	const char *s;
 	char smbuf [19];
 #if defined (FAILOVER_PROTOCOL)
 	dhcp_failover_state_t *peer;
@@ -679,7 +686,7 @@ void dhcprelease (packet, ms_nulltp)
 	struct iaddr cip;
 	struct option_cache *oc;
 	struct data_string data;
-	char *s;
+	const char *s;
 	char msgbuf [1024], cstr[16]; /* XXX */
 
 
@@ -816,7 +823,7 @@ void dhcpdecline (packet, ms_nulltp)
 	int ignorep = 0;
 	int i;
 	const char *status;
-	char *s;
+	const char *s;
 	char msgbuf [1024]; /* XXX */
 	struct iaddr cip;
 	struct option_cache *oc;
@@ -957,7 +964,7 @@ void dhcpinform (packet, ms_nulltp)
 	   source address if they didn't set ciaddr. */
 	if (!packet -> raw -> ciaddr.s_addr) {
 		cip.len = 4;
-		memcpy (cip.iabuf, &packet -> client_addr, 4);
+		memcpy (cip.iabuf, &packet -> client_addr.iabuf, 4);
 	} else {
 		cip.len = 4;
 		memcpy (cip.iabuf, &packet -> raw -> ciaddr, 4);
@@ -1483,6 +1490,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 	struct lease *lt;
 	struct lease_state *state;
 	struct lease *next;
+	struct host_decl *host = (struct host_decl *)0;
 	TIME lease_time;
 	TIME offered_lease_time;
 	struct data_string d1;
@@ -1504,6 +1512,10 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 	/* If we're already acking this lease, don't do it again. */
 	if (lease -> state)
 		return;
+
+	/* If the lease carries a host record, remember it. */
+	if (lease -> host)
+		host_reference (&host, lease -> host, MDL);
 
 	/* Allocate a lease state structure... */
 	state = new_lease_state (MDL);
@@ -1646,8 +1658,8 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		} while (1);
 	    }
 	    if (!lease -> uid_len ||
-		(lease -> host &&
-		 !lease -> host -> client_identifier.len &&
+		(host &&
+		 !host -> client_identifier.len &&
 		 (oc = lookup_option (&server_universe, state -> options,
 				      SV_DUPLICATES)) &&
 		 !evaluate_boolean_option_cache (&ignorep, packet, lease,
@@ -1713,14 +1725,17 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					  d1.data [0]);
 				data_string_forget (&d1, MDL);
 				free_lease_state (state, MDL);
+				if (host)
+					host_dereference (&host, MDL);
 				return;
 			}
 			data_string_forget (&d1, MDL);
 		}
 	}
 
-	/* Try to find a matching host declaration for this lease. */
-	if (!lease -> host) {
+	/* Try to find a matching host declaration for this lease.
+	 */
+	if (!host) {
 		struct host_decl *hp = (struct host_decl *)0;
 		struct host_decl *h;
 
@@ -1739,7 +1754,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 			find_hosts_by_uid (&hp, d1.data, d1.len, MDL);
 			data_string_forget (&d1, MDL);
 			if (hp)
-				host_reference (&lease -> host, hp, MDL);
+				host_reference (&host, hp, MDL);
 		}
 		if (!hp) {
 			find_hosts_by_haddr (&hp,
@@ -1752,7 +1767,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					break;
 			}
 			if (h)
-				host_reference (&lease -> host, h, MDL);
+				host_reference (&host, h, MDL);
 		}
 		if (hp)
 			host_dereference (&hp, MDL);
@@ -1760,20 +1775,20 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 
 	/* If we have a host_decl structure, run the options associated
 	   with its group.  Wether the host decl struct is old or not. */
-	if (lease -> host)
+	if (host)
 		execute_statements_in_scope ((struct binding_value **)0,
 					     packet, lease,
 					     (struct client_state *)0,
 					     packet -> options,
 					     state -> options, &lease -> scope,
-					     lease -> host -> group,
+					     host -> group,
 					     (lease -> pool
 					      ? lease -> pool -> group
 					      : lease -> subnet -> group));
 
 	/* Drop the request if it's not allowed for this client.   By
 	   default, unknown clients are allowed. */
-	if (!lease -> host &&
+	if (!host &&
 	    (oc = lookup_option (&server_universe, state -> options,
 				 SV_BOOT_UNKNOWN_CLIENTS)) &&
 	    !evaluate_boolean_option_cache (&ignorep,
@@ -1785,6 +1800,8 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		if (!ignorep)
 			log_info ("%s: unknown client", msg);
 		free_lease_state (state, MDL);
+		if (host)
+			host_dereference (&host, MDL);
 		return;
 	} 
 
@@ -1801,6 +1818,8 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		if (!ignorep)
 			log_info ("%s: bootp disallowed", msg);
 		free_lease_state (state, MDL);
+		if (host)
+			host_dereference (&host, MDL);
 		return;
 	} 
 
@@ -1817,6 +1836,8 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		if (!ignorep)
 			log_info ("%s: booting disallowed", msg);
 		free_lease_state (state, MDL);
+		if (host)
+			host_dereference (&host, MDL);
 		return;
 	}
 
@@ -1852,7 +1873,9 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					log_info ("%s: no available billing",
 						  msg);
 					free_lease_state (state, MDL);
-					/* XXX probably not necessary: */
+					if (host)
+						host_dereference (&host, MDL);
+					/* XXX possibly not necessary: */
 					return;
 				}
 			}
@@ -1885,6 +1908,8 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		log_info ("%s: can't allocate temporary lease structure: %s",
 			  msg, isc_result_totext (result));
 		free_lease_state (state, MDL);
+		if (host)
+			host_dereference (&host, MDL);
 		return;
 	}
 		
@@ -2113,8 +2138,10 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		data_string_forget (&d1, MDL);
 	}
 
-	if (lease -> host)
-		host_reference (&lt -> host, lease -> host, MDL);
+	if (host) {
+		host_reference (&lt -> host, host, MDL);
+		host_dereference (&host, MDL);
+	}
 	if (lease -> subnet)
 		subnet_reference (&lt -> subnet, lease -> subnet, MDL);
 	if (lease -> billing_class)
@@ -2693,7 +2720,7 @@ void dhcp_reply (lease)
 	struct option_tag *ot, *not;
 	struct data_string d1;
 	struct option_cache *oc;
-	char *s;
+	const char *s;
 
 	if (!state)
 		log_fatal ("dhcp_reply was supplied lease with no state!");

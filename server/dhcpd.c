@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhcpd.c,v 1.115.2.12 2004/07/10 00:11:18 dhankins Exp $ Copyright 2004 Internet Systems Consortium.";
+"$Id: dhcpd.c,v 1.115.2.15 2004/09/29 23:01:50 dhankins Exp $ Copyright 2004 Internet Systems Consortium.";
 #endif
 
   static char copyright[] =
@@ -377,8 +377,12 @@ int main (argc, argv, envp)
 
 #if defined (TRACING)
 	trace_init (set_time, MDL);
-	if (traceoutfile)
-		trace_begin (traceoutfile, MDL);
+	if (traceoutfile) {
+		result = trace_begin (traceoutfile, MDL);
+		if (result != ISC_R_SUCCESS)
+			log_fatal ("Unable to begin trace: %s",
+				isc_result_totext (result));
+	}
 	interface_trace_setup ();
 	parse_trace_setup ();
 	trace_srandom = trace_type_register ("random-seed", (void *)0,
@@ -536,22 +540,24 @@ int main (argc, argv, envp)
 	if ((i = open (path_dhcpd_pid, O_RDONLY)) >= 0) {
 		status = read (i, pbuf, (sizeof pbuf) - 1);
 		close (i);
-		pbuf [status] = 0;
-		pid = atoi (pbuf);
+		if (status > 0) {
+			pbuf [status] = 0;
+			pid = atoi (pbuf);
 
-		/* If the previous server process is not still running,
-		   write a new pid file immediately. */
-		if (pid && (pid == getpid() || kill (pid, 0) < 0)) {
-			unlink (path_dhcpd_pid);
-			if ((i = open (path_dhcpd_pid,
-				       O_WRONLY | O_CREAT, 0644)) >= 0) {
-				sprintf (pbuf, "%d\n", (int)getpid ());
-				write (i, pbuf, strlen (pbuf));
-				close (i);
-				pidfilewritten = 1;
-			}
-		} else
-			log_fatal ("There's already a DHCP server running.");
+			/* If the previous server process is not still running,
+			   write a new pid file immediately. */
+			if (pid && (pid == getpid() || kill (pid, 0) < 0)) {
+				unlink (path_dhcpd_pid);
+				if ((i = open (path_dhcpd_pid,
+					O_WRONLY | O_CREAT, 0644)) >= 0) {
+				    sprintf (pbuf, "%d\n", (int)getpid ());
+				    write (i, pbuf, strlen (pbuf));
+				    close (i);
+				    pidfilewritten = 1;
+				}
+			} else
+				log_fatal ("There's already a DHCP server running.");
+		}
 	}
 
 	/* If we were requested to log to stdout on the command line,
@@ -763,7 +769,7 @@ void postconf_initialization (int quiet)
 		}
 	} else {
 		log_info ("%s", "");
-		log_error ("** You must add a ddns-update-style %s%s.",
+		log_error ("** You must add a global ddns-update-style %s%s.",
 			   "statement to ", path_dhcpd_conf);
 		log_error ("   To get the same behaviour as in 3.0b2pl11 %s",
 			   "and previous");

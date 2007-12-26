@@ -219,8 +219,9 @@ the connection the user must call dhcpctl_new_authenticator.
 					   strlen(secret) + 1);
 .fi
 .PP
-The keyname, algorithm and secret must all match what is specified in
-the server's dhcpd.conf file:
+The keyname, algorithm and must all match what is specified in the server's
+dhcpd.conf file, excepting that the secret should appear in 'raw' form, not
+in base64 as it would in dhcpd.conf:
 .PP
 .nf
 		key "a-key-name" {
@@ -230,7 +231,7 @@ the server's dhcpd.conf file:
 
 		# Set the omapi-key value to use
 		# authenticated connections
-		omapi-key "a-key-name";
+		omapi-key a-key-name;
 .fi
 .PP
 The authenticator handle that is created by the call to

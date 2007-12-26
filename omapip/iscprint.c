@@ -15,7 +15,7 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/* $Id: iscprint.c,v 1.1.2.1 2004/06/14 21:09:22 dhankins Exp $ */
+/* $Id: iscprint.c,v 1.1.2.1 2004/09/21 20:33:13 dhankins Exp $ */
 
 #include "dhcpd.h"
 
@@ -23,7 +23,7 @@
 
 #ifndef LINT
 static char copyright[] =
-"$Id: iscprint.c,v 1.1.2.1 2004/06/14 21:09:22 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium, Inc.  All rights reserved.";
+"$Id: iscprint.c,v 1.1.2.1 2004/09/21 20:33:13 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium, Inc.  All rights reserved.";
 #endif
 
 #define INSIST(cond)	REQUIRE(cond)

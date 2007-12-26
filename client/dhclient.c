@@ -32,7 +32,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.129.2.19 2004/07/10 00:11:16 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.129.2.22 2004/09/29 23:01:46 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -936,6 +936,8 @@ void state_bound (cpp)
 			client -> destination.len = 4;
 		} else
 			client -> destination = iaddr_broadcast;
+
+		data_string_forget (&ds, MDL);
 	} else
 		client -> destination = iaddr_broadcast;
 
@@ -1398,9 +1400,9 @@ void send_discover (cpp)
 
 	/* If we're supposed to increase the interval, do so.  If it's
 	   currently zero (i.e., we haven't sent any packets yet), set
-	   it to one; otherwise, add to it a random number between
-	   zero and two times itself.  On average, this means that it
-	   will double with every transmission. */
+	   it to initial_interval; otherwise, add to it a random number
+	   between zero and two times itself.  On average, this means
+	   that it will double with every transmission. */
 	if (increase) {
 		if (!client -> interval)
 			client -> interval =
@@ -1644,7 +1646,8 @@ void send_request (cpp)
 	    client -> config -> backoff_cutoff)
 		client -> interval =
 			((client -> config -> backoff_cutoff / 2)
-			 + ((random () >> 2) % client -> interval));
+			 + ((random () >> 2) %
+					client -> config -> backoff_cutoff));
 
 	/* If the backoff would take us to the expiry time, just set the
 	   timeout to the expiry time. */
@@ -1946,6 +1949,9 @@ void make_request (client, lease)
 	else
 		oc = (struct option_cache *)0;
 
+	if (client -> sent_options)
+		option_state_dereference (&client -> sent_options, MDL);
+
 	make_client_options (client, lease, &request, oc,
 			     ((client -> state == S_REQUESTING ||
 			       client -> state == S_REBOOTING)
@@ -1968,7 +1974,6 @@ void make_request (client, lease)
 			      (struct data_string *)0,
 			      client -> config -> vendor_space_name);
 
-	option_state_dereference (&client -> sent_options, MDL);
 	if (client -> packet_length < BOOTP_MIN_LEN)
 		client -> packet_length = BOOTP_MIN_LEN;
 
@@ -2825,6 +2830,8 @@ void do_release(client)
 				client -> destination.len = 4;
 			} else
 				client -> destination = iaddr_broadcast;
+
+			data_string_forget (&ds, MDL);
 		} else
 			client -> destination = iaddr_broadcast;
 		client -> first_sending = cur_time;

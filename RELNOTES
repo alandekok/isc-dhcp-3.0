@@ -1,6 +1,6 @@
 	      Internet Systems Consortium DHCP Distribution
-			     Version 3.0.1
-			     July 14, 2004
+			     Version 3.0.2b1
+			     October 5, 2004
 
 			     Release Notes
 
@@ -42,6 +42,124 @@ Measurement Systems, Igor Sharfmesser at Kazakh Telecom, and Brian
 Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
+
+			Changes since 3.0.1
+
+- A bug was fixed in the server's 'option overloading' implementation,
+  where options loaded into the 'file' and 'sname' packet fields were
+  not aligned precisely as rfc2131 dictates.
+
+- The FreeBSD client script was changed to support the case where a domain
+  name was not provided by the server.
+
+- A memory leak in 'omshell' per each command line parsed was
+  repaired, thanks to a patch from Jarkko Torppa.
+
+- Log functions writing to stderr were adjusted to use the STDERR_FILENO
+  system definition rather than '2'.  This is a no-op for 90% of platforms.
+
+- One call to trace_write_packet_iov() counted the number of io vectors
+  incorrectly, causing inconsistent tracefiles.  This was fixed.
+
+- Some expression parse failure memory leaks were closed.
+
+- A host byte order problem in tracefiles was repaired.
+
+- Pools configured in DHCPD for failover possessing permission lists that
+  previously were assumed to not include dyanmic bootp clients are now
+  a little more pessimistic.  The result is, dhcpd will nag you about just
+  about most pools that possess a 'allow' statement with no 'deny' that
+  would definitely match a dynamic bootp client.
+
+- The 'ddns-update-style' configuration warning bit now insists that
+  the configuration be globally scoped.
+
+- Two memory leaks in dhclient were closed thanks to a patch from Felix
+  Farkas.
+
+- Some minor but excellently pedantic documentation errors were fixed
+  thanks to a patch from Thomas Klausner.
+
+- Bugs in operator precedence in executable statements have been repaired
+  once again.  More legal syntaxes should be parsed legally.
+
+- Failing to initialize a tracefile for any reason if a tracefile was
+  specified is now a fatal error.  Thanks to a patch from Albert Herranz.
+
+- Corrected a bug in which the number of leases transferred as calculated
+  by the failover primary and sent to peers in POOLRESP responses may be
+  incorrect.  This value is not believed to be used by other failover
+  implementations, excepting perhaps as logged information.
+
+- Corrected a bug in which 'dhcp_failover_send_poolresp()' was in fact
+  sending POOLREQ messages instead of POOLRESP mesasges.  This message
+  was essentially ignored since failover secondaries effectively do not
+  respond to POOLREQ messages.
+
+- Type definitions for various bitwidths of integers in the sunos5-5
+  build of ISC DHCP have been fixed.  It should compile and run more
+  easily when built in 64-bit for this platform.
+
+- "allow known-clients;" is now a legal syntax, to avoid confusion.
+
+- If one dhcp server chooses to 'load balance' a request to its failover
+  peer, it first checks to see if it believes said peer has a free
+  lease to allocate before ignoring the DISCOVER.
+
+- log() was logging a work buffer, rather than the value returned by
+  executing the statements configured by the user.  In some cases,
+  the work buffer and the intended results were the same.  In some other
+  cases, they were not.  This was fixed thanks to a patch from Gunnar
+  Fjone and directconnect.no.
+
+- Compiler warnings for some string type conversions was fixed, thanks
+  to Andreas Gustafsson.
+
+- The netbsd build environments were simplified to one, in which
+  -Wconversion is not used, thanks to Andreas Gustafsson.
+
+- How randomness in the backoff-cutoff dhclient configuration variable
+  is implemented was better documented in the manpage, and the behaviour
+  of dhclient in REQUEST timeout handling was changed to match that of
+  DISCOVER timeout handling.
+
+- Omapi was hardened against clients that pass in null values, thanks
+  to a patch from Mark Jason Dominus.
+
+- A bug was fixed in dhclient that kept it from doing client-side
+  ddns updates.  Thanks to a patch from Andreas Gustafsson, which
+  underwent some modification after review by Jason Vas Dias.
+
+- Failover implementations disconnected due to the network between
+  them (rather than one of the two shutting down) will now try to
+  re-establish the failover connection every 5 seconds, rather than
+  to simply try once and give up until one of them is restarted.
+  Thanks to a patch from Ulf Ekberg from Infoblox, and field testing
+  by Greger V. Teigre which led to an enhancement to it.
+
+- A problem that kept DHCP Failover secondaries from tearing down
+  ddns records was repaired.  Thanks to a patch from Ulf Ekberg from
+  Infoblox.
+
+- 64bit pointer sizes are detected properly on FreeBSD now.
+
+- A bug was repaired where the DHCP server would leave stale references
+  to host records on leases it once thought about offering to certain
+  clients.  The result would be to apply host and 'known' scopes to the
+  wrong clients (possibly denying booting).  NOTE:  The 'mis-host' patch
+  that was being circulated as a workaround is not the way this bug was
+  fixed.  If you were a victim of this bug in 3.0.1, you are cautioned
+  to proceed carefully and see if it fixes your problem.
+
+- A bug was repaired in the server's DHCPINFORM handling, where it
+  tried to divine the client's address from the source packet and
+  would get it wrong.  Thanks to Anshuman Singh Rawat.
+
+- A log message was introduced to help illuminate the case where the
+  server was unable to find a lease to assign to any BOOTP client.
+  Thanks to Daniel Baker.
+
+- A minor dhcpd.conf.5 manpage error was fixed.
 
 			Changes since 3.0.1rc14
 
