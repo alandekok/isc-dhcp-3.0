@@ -30,6 +30,7 @@
 #if defined (NSUPDATE)
 # include <arpa/nameser.h>
 # include <resolv.h>
+# include <res_update.h>
 #endif
 
 #include <netdb.h>
@@ -385,10 +386,10 @@ struct pool {
 	struct lease *leases;
 	struct lease *insertion_point;
 	struct lease *last_lease;
+	struct lease *next_expiry;
 };
 
 /* A failover peer. */
-#if defined (FAILOVER_PROTOCOL)
 enum failover_state {
 	invalid_state,
 	partner_down,
@@ -398,6 +399,7 @@ enum failover_state {
 	recover
 };
 
+#if defined (FAILOVER_PROTOCOL)
 struct failover_peer {
 	char *name;			/* Name of this failover instance. */
 	struct expression *address;	/* Partner's IP address or hostname. */
@@ -827,11 +829,16 @@ int agent_option_space_encapsulate PROTO ((struct data_string *,
 
 /* errwarn.c */
 extern int warnings_occurred;
-void log_fatal PROTO ((char *, ...));
-int log_error PROTO ((char *, ...));
-int log_info PROTO ((char *, ...));
-int log_debug PROTO ((char *, ...));
-int parse_warn PROTO ((char *, ...));
+void log_fatal PROTO ((char *, ...))
+	__attribute__((__format__(__printf__,1,2)));
+int log_error PROTO ((char *, ...))
+	__attribute__((__format__(__printf__,1,2)));
+int log_info PROTO ((char *, ...))
+	__attribute__((__format__(__printf__,1,2)));
+int log_debug PROTO ((char *, ...))
+	__attribute__((__format__(__printf__,1,2)));
+int parse_warn PROTO ((char *, ...))
+	__attribute__((__format__(__printf__,1,2)));
 
 /* dhcpd.c */
 extern TIME cur_time;
@@ -1017,9 +1024,11 @@ int subnet_inner_than PROTO ((struct subnet *, struct subnet *, int));
 void enter_subnet PROTO ((struct subnet *));
 void enter_lease PROTO ((struct lease *));
 int supersede_lease PROTO ((struct lease *, struct lease *, int));
-void release_lease PROTO ((struct lease *));
-void abandon_lease PROTO ((struct lease *, char *));
-void dissociate_lease PROTO ((struct lease *));
+void release_lease PROTO ((struct lease *, struct packet *));
+void abandon_lease PROTO ((struct lease *, struct packet *, char *));
+void dissociate_lease PROTO ((struct lease *, struct packet *));
+void pool_timer PROTO ((void *));
+void expire_all_pools PROTO ((void));
 struct lease *find_lease_by_uid PROTO ((unsigned char *, int));
 struct lease *find_lease_by_hw_addr PROTO ((unsigned char *, int));
 struct lease *find_lease_by_ip_addr PROTO ((struct iaddr));
@@ -1116,7 +1125,7 @@ void print_expression PROTO ((char *, struct expression *));
 int if_register_socket PROTO ((struct interface_info *));
 #endif
 
-#ifdef USE_SOCKET_FALLBACK
+#if defined (USE_SOCKET_FALLBACK) && !defined (USE_SOCKET_SEND)
 void if_reinitialize_fallback PROTO ((struct interface_info *));
 void if_register_fallback PROTO ((struct interface_info *));
 ssize_t send_fallback PROTO ((struct interface_info *,
@@ -1145,7 +1154,7 @@ ssize_t receive_packet PROTO ((struct interface_info *,
 void fallback_discard PROTO ((struct protocol *));
 #endif
 
-#if defined (USE_SOCKET_SEND) && !defined (USE_SOCKET_FALLBACK)
+#if defined (USE_SOCKET_SEND)
 int can_unicast_without_arp PROTO ((struct interface_info *));
 int can_receive_unicast_unconfigured PROTO ((struct interface_info *));
 void maybe_setup_fallback PROTO ((void));
@@ -1388,7 +1397,7 @@ int write_lease PROTO ((struct lease *));
 int db_printable PROTO ((char *));
 int write_billing_class PROTO ((struct class *));
 int commit_leases PROTO ((void));
-void db_startup PROTO ((void));
+void db_startup PROTO ((int));
 void new_lease_file PROTO ((void));
 
 /* packet.c */

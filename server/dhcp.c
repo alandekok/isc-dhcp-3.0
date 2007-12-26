@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.100.2.3 1999/10/07 21:36:27 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.100.2.8 1999/10/25 18:51:35 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -208,7 +208,7 @@ void dhcprequest (packet)
 				return;
 			}
 			/* Otherwise, ignore it. */
-			log_info ("%s: ignored.", msgbuf);
+			log_info ("%s: ignored (not authoritative).", msgbuf);
 			return;
 		}
 
@@ -222,7 +222,7 @@ void dhcprequest (packet)
 				nak_lease (packet, &cip);
 				return;
 			}
-			log_info ("%s: ignored.", msgbuf);
+			log_info ("%s: ignored (not authoritative).", msgbuf);
 			return;
 		}
 	}
@@ -269,18 +269,27 @@ void dhcprelease (packet)
 				   (struct lease *)0, oc)) {
 		lease = find_lease_by_uid (data.data, data.len);
 		data_string_forget (&data, "dhcprelease");
-	} else
-		lease = (struct lease *)0;
 
-	/* The client is supposed to pass a valid client-identifier,
-	   but the spec on this has changed historically, so try the
-	   IP address in ciaddr if the client-identifier fails. */
-	if (!lease) {
-		cip.len = 4;
-		memcpy (cip.iabuf, &packet -> raw -> ciaddr, 4);
-		lease = find_lease_by_ip_addr (cip);
+		/* See if we can find a lease that matches the IP address
+		   the client is claiming. */
+		for (; lease; lease = lease -> n_uid) {
+			if (!memcmp (&packet -> raw -> ciaddr,
+				     lease -> ip_addr.iabuf, 4)) {
+				break;
+			}
+		}
+	} else {
+
+		/* The client is supposed to pass a valid client-identifier,
+		   but the spec on this has changed historically, so try the
+		   IP address in ciaddr if the client-identifier was
+		   not specified. */
+		if (!lease) {
+			cip.len = 4;
+			memcpy (cip.iabuf, &packet -> raw -> ciaddr, 4);
+			lease = find_lease_by_ip_addr (cip);
+		}
 	}
-
 
 	log_info ("DHCPRELEASE of %s from %s via %s (%sfound)",
 	      inet_ntoa (packet -> raw -> ciaddr),
@@ -293,11 +302,8 @@ void dhcprelease (packet)
 	      lease ? "" : "not ");
 
 	/* If we found a lease, release it. */
-	if (lease) {
-#if defined (NSUPDATE)
-		nsupdate (lease, lease -> state, packet, DELETE);
-#endif
-		release_lease (lease);
+	if (lease && lease -> ends > cur_time) {
+		release_lease (lease, packet);
 	}
 }
 
@@ -334,7 +340,7 @@ void dhcpdecline (packet)
 
 	/* If we found a lease, mark it as unusable and complain. */
 	if (lease) {
-		abandon_lease (lease, "declined.");
+		abandon_lease (lease, packet, "declined.");
 	}
 }
 
@@ -371,7 +377,7 @@ void dhcpinform (packet)
 
 	/* If the IP source address is zero, don't respond. */
 	if (!memcmp (cip.iabuf, "\0\0\0", 4)) {
-		log_info ("%s: ignored.", msgbuf);
+		log_info ("%s: ignored (null source address).", msgbuf);
 		return;
 	}
 
@@ -383,6 +389,16 @@ void dhcpinform (packet)
 	if (!subnet) {
 		log_info ("%s: unknown subnet %s",
 			  msgbuf, inet_ntoa (packet -> raw -> giaddr));
+	}
+
+	/* We don't respond to DHCPINFORM packets if we're not authoritative.
+	   It would be nice if a per-host value could override this, but
+	   there's overhead involved in checking this, so let's see how people
+	   react first. */
+	if (!subnet -> group -> authoritative) {
+		log_info ("%s: not authoritative for subnet %s",
+			  msgbuf, piaddr (subnet -> net));
+		return;
 	}
 
 	memset (&d1, 0, sizeof d1);
@@ -757,7 +773,10 @@ void nak_lease (packet, cip)
 	   Otherwise, broadcast it on the local network. */
 	if (raw.giaddr.s_addr) {
 		to.sin_addr = raw.giaddr;
-		to.sin_port = local_port;
+		if (raw.giaddr.s_addr != INADDR_LOOPBACK)
+			to.sin_port = local_port;
+		else
+			to.sin_port = remote_port; /* for testing. */
 
 		if (fallback_interface) {
 			result = send_packet (fallback_interface,
@@ -915,7 +934,7 @@ void ack_lease (packet, lease, offer, when, msg)
 					seek = seek -> n_uid;
 				}
 				if (seek) {
-					release_lease (seek);
+					release_lease (seek, packet);
 				}
 			} while (seek);
 		} else {
@@ -930,7 +949,7 @@ void ack_lease (packet, lease, offer, when, msg)
 					seek = seek -> n_hw;
 				}
 				if (seek) {
-					release_lease (seek);
+					release_lease (seek, packet);
 				}
 			} while (seek);
 		}
@@ -946,7 +965,7 @@ void ack_lease (packet, lease, offer, when, msg)
 					   packet -> options, lease, oc)) {
 			if (d1.len && packet -> raw -> secs < d1.data [0]) {
 				data_string_forget (&d1, "ack_lease");
-				log_info ("%s: %d secs < %d",
+				log_info ("%s: %d secs < %d", msg,
 				      packet -> raw -> secs, d1.data [0]);
 				free_lease_state (state, "ack_lease");
 				return;
@@ -1148,6 +1167,9 @@ void ack_lease (packet, lease, offer, when, msg)
 			lease_time = max_lease_time;
 			
 		min_lease_time = DEFAULT_MIN_LEASE_TIME;
+		if (min_lease_time > max_lease_time)
+			min_lease_time = max_lease_time;
+
 		if ((oc = lookup_option (&server_universe, state -> options,
 					 SV_MIN_LEASE_TIME))) {
 			if (evaluate_option_cache (&d1, packet,
@@ -1166,7 +1188,13 @@ void ack_lease (packet, lease, offer, when, msg)
 				lease_time = default_lease_time;
 		}
 
-		state -> offered_expiry = cur_time + lease_time;
+		/* If the lease duration causes the time value to wrap,
+		   use the maximum expiry time. */
+		if (cur_time + lease_time < cur_time)
+			state -> offered_expiry = MAX_TIME;
+		else
+			state -> offered_expiry = cur_time + lease_time;
+
 		if (when)
 			lt.ends = when;
 		else
@@ -1231,9 +1259,22 @@ void ack_lease (packet, lease, offer, when, msg)
 	lt.subnet = lease -> subnet;
 	lt.billing_class = lease -> billing_class;
 
+	/* Set a flag if this client is a broken client that NUL
+	   terminates string options and expects us to do likewise. */
+	lease -> flags &= ~MS_NULL_TERMINATION;
+	if ((oc = lookup_option (&dhcp_universe, packet -> options,
+				 DHO_HOST_NAME))) {
+		if (!oc -> expression)
+			if (oc -> data.len &&
+			    oc -> data.data [oc -> data.len - 1] == 0) {
+				lease -> flags |= MS_NULL_TERMINATION;
+				oc -> data.len--;
+			}
+	}
+
 	/* Do the DDNS update.  It needs to be done here so that the lease
 	   structure values for the forward and reverse names are in place for
-	   supercede()->write_lease() to be able to write into the dhcpd.leases
+	   supersede()->write_lease() to be able to write into the dhcpd.leases
 	   file.  We have to pass the "state" structure here as it is not yet
 	   hanging off the lease. */
 	/* why not update for static leases too? */
@@ -1273,19 +1314,6 @@ void ack_lease (packet, lease, offer, when, msg)
 
 	/* Remember the interface on which the packet arrived. */
 	state -> ip = packet -> interface;
-
-	/* Set a flag if this client is a broken client that NUL
-	   terminates string options and expects us to do likewise. */
-	lease -> flags &= ~MS_NULL_TERMINATION;
-	if ((oc = lookup_option (&dhcp_universe, packet -> options,
-				 DHO_HOST_NAME))) {
-		if (evaluate_option_cache (&d1, packet,
-					   packet -> options, lease, oc)) {
-			if (d1.data [d1.len - 1] == '\0')
-				lease -> flags |= MS_NULL_TERMINATION;
-			data_string_forget (&d1, "ack_lease");
-		}
-	}
 
 	/* Remember the giaddr, xid, secs, flags and hops. */
 	state -> giaddr = packet -> raw -> giaddr;
@@ -1763,7 +1791,10 @@ void dhcp_reply (lease)
 	/* If this was gatewayed, send it back to the gateway... */
 	if (raw.giaddr.s_addr) {
 		to.sin_addr = raw.giaddr;
-		to.sin_port = local_port;
+		if (raw.giaddr.s_addr != INADDR_LOOPBACK)
+			to.sin_port = local_port;
+		else
+			to.sin_port = remote_port; /* For debugging. */
 
 		if (fallback_interface) {
 			result = send_packet (fallback_interface,
@@ -1981,7 +2012,7 @@ struct lease *find_lease (packet, share, ours)
 #endif
 			next = uid_lease -> n_uid;
 			if (!packet -> raw -> ciaddr.s_addr)
-				release_lease (uid_lease);
+				release_lease (uid_lease, packet);
 			continue;
 		}
 		break;
@@ -2033,7 +2064,7 @@ struct lease *find_lease (packet, share, ours)
 #endif
 			next = hw_lease -> n_hw;
 			if (!packet -> raw -> ciaddr.s_addr)
-				release_lease (hw_lease);
+				release_lease (hw_lease, packet);
 			continue;
 		}
 		break;
@@ -2130,7 +2161,7 @@ struct lease *find_lease (packet, share, ours)
 				    !packet -> raw -> ciaddr.s_addr &&
 				    (share ==
 				     uid_lease -> subnet -> shared_network))
-					dissociate_lease (uid_lease);
+					dissociate_lease (uid_lease, packet);
 			    }
 			    uid_lease = ip_lease;
 			}
@@ -2173,7 +2204,7 @@ struct lease *find_lease (packet, share, ours)
 	     (ip_lease -> pool -> permit_list &&
 	      !permitted (packet, ip_lease -> pool -> permit_list)))) {
 		if (!packet -> raw -> ciaddr.s_addr)
-			release_lease (ip_lease);
+			release_lease (ip_lease, packet);
 		ip_lease = (struct lease *)0;
 	}
 
@@ -2229,7 +2260,7 @@ struct lease *find_lease (packet, share, ours)
 	if (ip_lease) {
 		if (lease) {
 			if (!packet -> raw -> ciaddr.s_addr)
-				release_lease (ip_lease);
+				release_lease (ip_lease, packet);
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not choosing requested address (!).");
 #endif
@@ -2248,7 +2279,7 @@ struct lease *find_lease (packet, share, ours)
 	if (uid_lease) {
 		if (lease) {
 			if (!packet -> raw -> ciaddr.s_addr)
-				dissociate_lease (uid_lease);
+				dissociate_lease (uid_lease, packet);
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not choosing uid lease.");
 #endif
@@ -2265,7 +2296,7 @@ struct lease *find_lease (packet, share, ours)
 	if (hw_lease) {
 		if (lease) {
 			if (!packet -> raw -> ciaddr.s_addr)
-				dissociate_lease (hw_lease);
+				dissociate_lease (hw_lease, packet);
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not choosing hardware lease.");
 #endif

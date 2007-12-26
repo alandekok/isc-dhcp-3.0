@@ -390,6 +390,7 @@ be affected by pool permits related to that class - when the pool permit list
 is computed, the client will not yet be a member of the pool.   This is an
 inconsistency that will probably be addressed in later versions of the DHCP
 server, but it important to be aware of it at lease for the time being.
+.SH SUBCLASSES
 .PP
 In addition to classes, it is possible to declare subclasses.   A
 subclass is a class with the same name as a regular class, but with a
@@ -400,29 +401,64 @@ that it will be quicker to find the subclasses.   Subclasses work as
 follows:
 .PP
 .nf
-class "vendor-classes" {
-  match option vendor-class-identifier;
+class "allocation-class-1" {
+  match hardware;
 }
 
-subclass "vendor-classes" "SUNW.Ultra-5_10" {
-  option vendor-encapsulated-options 
-	   2:AC:11:41:1:
-	   3:12:73:75:6e:64:68:63:70:2d:73:65:72:76:65:72:31:37:2d:31:
-	   4:12:2f:65:78:70:6f:72:74:2f:72:6f:6f:74:2f:73:70:61:72:63;
+class "allocation-class-2" {
+  match hardware;
 }
 
-subclass "vendor-classes" "SUNW.i86pc" {
-  option vendor-encapsulated-options
-	   2:4:AC:11:41:1:
-	   3:12:73:75:6e:64:68:63:70:2d:73:65:72:76:65:72:31:37:2d:31:
-	   4:12:2f:65:78:70:6f:72:74:2f:72:6f:6f:74:2f:69:38:36:70:63;
+subclass "allocation-class-1" 1:8:0:2b:4c:39:ad;
+subclass "allocation-class-2" 1:8:0:2b:a9:cc:e3;
+subclass "allocation-class-1" 1:0:0:c4:aa:29:44;
+
+subnet 10.0.0.0 netmask 255.255.255.0 {
+  pool {
+    allow members of "allocation-class-1";
+    range 10.0.0.11 10.0.0.50;
+  }
+  pool {
+    allow members of "allocation-class-2";
+    range 10.0.0.51 10.0.0.100;
+  }
 }
 .fi
 .PP
-The string following the class name for the subclasses specifies the
-string that is expected to match the expression in the class
-declaration for the vendor-classes class.
+The data following the class name in the subclass declaration is a
+constant value to use in matching the match expression for the class.
+When class matching is done, the server will evaluate the match
+expression and then look the result up in the hash table.   If it
+finds a match, the client is considered a member of both the class and
+the subclass.
 .PP
+Subclasses can be declared with or without scope.   In the above
+example, the sole purpose of the subclass is to allow some clients
+access to one address pool, while other clients are given access to
+the other pool, so these subclasses are declared without scopes.   If
+part of the purpose of the subclass were to define different parameter
+values for some clients, you might want to declare some subclasses
+with scopes.
+.PP
+In the above example, if you had a single client that needed some
+configuration parameters, while most didn't, you might write the
+following subclass declaration for that client:
+.PP
+.nf
+subclass "allocation-class-2" 1:08:00:2b:a1:11:31 {
+  option root-path "samsara:/var/diskless/alphapc";
+  filename "/tftpboot/netbsd.alphapc-diskless";
+}
+.fi
+.PP
+In this example, we've used subclassing as a way to control address
+allocation on a per-client basis.  However, it's also possible to use
+subclassing in ways that are not specific to clients - for example, to
+use the value of the vendor-class-identifier option to determine what
+values to send in the vendor-encapsulated-options option.  An example
+of this is shown under the VENDOR ENCAPSULATED OPTIONS head later on
+in this document.
+.SH PER-CLASS LIMITS ON DYNAMIC ADDRESS ALLOCATION
 You may specify a limit to the number of clients in a class that can
 be assigned leases.   The effect of this will be to make it difficult
 for a new client in a class to get an address.   Once a class with
@@ -478,6 +514,154 @@ limit of four leases.
 The use of the subclass spawning mechanism is not restricted to relay
 agent options - this particular example is given only because it is a
 fairly straightforward one.
+.SH DYNAMIC DNS UPDATES
+.PP
+The DHCP server has the ability to dynamically update the Domain Name
+System.  Within the configuration files, you can define how you want
+the Domain Name System to be updated.  These updates are RFC 2136
+compliant so any DNS server supporting RFC 2136 should be able to
+accept updates from the DHCP server.   The DHCP server will only
+perform DNS updates if it has been built with DNS updates enabled as
+described in the README file that comes with the DHCP distribution.
+.PP
+The Dynamic DNS update scheme implemented in this version of the ISC
+DHCP server is an interim implementation, which does not implement any
+of the standard update methods that have been discussed in the working
+group, but rather implements some very basic, yet useful, update
+capabilities.
+.PP
+There are three parameters, which may vary according to the scope,
+that control how DDNS updates will be done.   The first two are the
+.I ddns-domainname
+and
+.I ddns-rev-domainname
+statements.   The
+.I ddns-domainname
+parameter sets the domain name that will be appended to the client's
+hostname to form a fully-qualified domain-name (FQDN).   For example,
+if the client's hostname is "hutson" and the
+.I ddns-domainname
+is set to "sneedville.edu", then the client's FQDN will be
+"hutson.sneedville.edu".
+.PP
+The
+.I ddns-rev-domainname
+parameter sets the domain name that will be appended to the client's
+reversed IP address to produce a name for use in the client's PTR
+record.   Normally, you would set this to "in-addr.arpa", but this is
+not required.
+.PP
+A third parameter,
+.I ddns-hostname
+can be used to specify the hostname that will be used as the client's
+hostname.   If no ddns-hostname is specified in scope, then the server
+will use a host-name option sent by the client.   If the client did
+not send a host-name option, then if there is a host declaration that
+applies to the client, the name from that declaration will be used.
+If none of these applies, the server will not have a hostname for the
+client, and will not be able to do a DDNS update.
+.SH HOW DNS UPDATES WORK
+.PP
+The client's FQDN, derived as we have described, is used as the name
+on which an "A" record will be stored.   The A record will contain the
+IP address that the client was assigned in its lease.   If there is
+already an A record with the same name in the DNS server, no update of
+either the A or PTR records will occur - this prevents a client from
+claiming that its hostname is the name of some network server.   For
+example, if you have a fileserver called "fs.sneedville.edu", and the
+client claims its hostname is "fs", no DNS update will be done for
+that client, and an error message will be logged.
+.PP
+If the A record update succeeds, a PTR record update for the assigned
+IP address will be done, pointing to the A record.   This update is
+unconditional - it will be done even if another PTR record of the same
+name exists.   Since the IP address has been assigned to the DHCP
+server, this should be safe.
+.PP
+Please note that the current implementation assumes clients only have
+a single network interface.   A client with two network interfaces
+will see unpredictable behaviour.   This is considered a bug, and will
+be fixed in a later release.   It may be helpful to enable the
+.I one-lease-per-client
+parameter so that roaming clients do not trigger this same behavior.
+.PP
+The DHCP protocol normally involves a four-packet exchange - first the
+client sends a DHCPDISCOVER message, then the server sends a
+DHCPOFFER, then the client sends a DHCPREQUEST, then the server sends
+a DHCPACK.   In the current version of the server, the server will do
+a DNS update after it has received the DHCPREQUEST, and before it has
+sent the DHCPOFFER.   It only sends the DNS update if it has not sent
+one for the client's address before, in order to minimize the impact
+on the DHCP server.
+.PP
+When the client's lease expires, the DHCP server (if it is operating
+at the time, or when next it operates) will remove the client's A and
+PTR records from the DNS database.   If the client releases its lease
+by sending a DHCPRELEASE message, the server will likewise remove the
+A and PTR records.
+.SH DYNAMIC DNS UPDATE SECURITY
+.PP
+Support for TSIG and DNSSEC is not yet available.  When you set your
+DNS server up to allow updates from the DHCP server, you may
+be exposing it to unauthorized updates.  To avoid this, the best you
+can do right now is to use IP address-based packet filtering to
+prevent unauthorized hosts from submitting update requests.
+.PP
+The DNS server must be configured to allow updates for any zone that
+the DHCP server will be updating.  For example, let us say that
+clients in the sneedville.edu domain will be assigned addresses on the
+10.10.17.0/24 subnet.  In that case, assuming you are using ISC BIND
+8.2.1 or later, you would need to have the following declarations in
+your /etc/named.conf file:
+.PP
+.nf
+zone "sneedville.edu" {
+	type master;
+	file "sneedville.edu.db";
+	allow-update { localhost; };
+};
+
+zone "17.10.10.in-addr.arpa" {
+	type master;
+	file "10.10.17.db";
+	allow-update { localhost; };
+};
+.fi
+.PP
+This assumes that your DHCP server and your name server will be
+running on the same computer - the "localhost" name is taken in the
+DNS server as an alias for all of that host's IP addresses, and
+updates from any of those addresses will be accepted.
+.PP
+You may wish to enable logging of DNS transactions on your DNS server.
+To do so, you might write a logging statement like the following:
+.PP
+.nf
+logging {
+	channel update_debug {
+		file "/var/log/update-debug.log";
+		severity	debug 3;
+		print-category	yes;
+		print-severity	yes;
+		print-time	yes;
+	};
+	channel security_info	{
+		file	"/var/log/named-auth.info";
+		severity	info;
+		print-category	yes;
+		print-severity	yes;
+		print-time	yes;
+	};
+
+	category update { update_debug; };
+	category security { security_info; };
+};
+.fi
+.PP
+You must create the /var/log/named-auth.info and
+/var/log/update-debug.log files before starting the name server.   For
+more information on configuring ISC BIND, consult the documentation
+that accompanies it.
 .SH REFERENCE: DECLARATIONS
 .PP
 .B The 
@@ -713,6 +897,8 @@ following syntaxes are recognized following the allow or deny keyword:
 .PP
 If specified, this statement either allows or prevents allocation from
 this pool to any client that has a host declaration (i.e., is known).
+A client is known if it has a host declaration in \fIany\fR scope, not
+just the current scope.
 .PP
  \fBunknown clients;\fR
 .PP
@@ -1125,8 +1311,14 @@ option space should be used to generate the
 option in some scope.
 .PP
 To send a simple clump of data, simply provide a value for the option
-in the right scope, as in the example shown earlier in the \fBCLIENT
-CLASSING\fR section.
+in the right scope - for example:
+.PP
+.nf
+  option vendor-encapsulated-options
+	   2:4:AC:11:41:1:
+	   3:12:73:75:6e:64:68:63:70:2d:73:65:72:76:65:72:31:37:2d:31:
+	   4:12:2f:65:78:70:6f:72:74:2f:72:6f:6f:74:2f:69:38:36:70:63;
+.fi
 .PP
 To define a new option space in which vendor options can be stored,
 use the \fRoption space\fP statement:
@@ -1150,12 +1342,11 @@ manual page.   For example:
 .fi
 Once you have defined an option space and some options, you can set up
 scopes that define values for those options, and you can say when to
-use them.   For example, suppose you want to handle two different
-classes of clients, as in the example in the \fBCLIENT CLASSING\fR
-section.   Using the option space definition we just did, the
-.B CLIENT
-.B CLASSING
-example can be implemented more legibly as follows:
+use them.  For example, suppose you want to handle two different
+classes of clients, as in the example in the \fBVENDOR ENCAPSULATED
+OPTIONS\fR section.  Using the option space definition we just did,
+the \fBVENDOR ENCAPSULATED OPTIONS\fR example can be implemented more
+legibly as follows:
 .nf
 class "vendor-classes" {
   match option vendor-class-identifier;

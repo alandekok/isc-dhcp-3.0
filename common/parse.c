@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: parse.c,v 1.28 1999/07/06 20:41:22 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: parse.c,v 1.28.2.3 1999/10/20 02:19:48 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -466,12 +466,12 @@ void convert_num (buf, str, base, size)
 		else if (tval >= '0')
 			tval -= '0';
 		else {
-			log_error ("Bogus number: %s.", str);
+			parse_warn ("Bogus number: %s.", str);
 			break;
 		}
 		if (tval >= base) {
-			log_error ("Bogus number: %s: digit %d not in base %d\n",
-			      str, tval, base);
+		    parse_warn ("Bogus number: %s: digit %d not in base %d",
+				str, tval, base);
 			break;
 		}
 		val = val * base + tval;
@@ -484,16 +484,16 @@ void convert_num (buf, str, base, size)
 	if (val > max) {
 		switch (base) {
 		      case 8:
-			log_error ("value %s%o exceeds max (%d) for precision.",
-			      negative ? "-" : "", val, max);
+			parse_warn ("%s%o exceeds max (%d) for precision.",
+				    negative ? "-" : "", val, max);
 			break;
 		      case 16:
-			log_error ("value %s%x exceeds max (%d) for precision.",
-			      negative ? "-" : "", val, max);
+			parse_warn ("%s%x exceeds max (%d) for precision.",
+				    negative ? "-" : "", val, max);
 			break;
 		      default:
-			log_error ("value %s%u exceeds max (%d) for precision.",
-			      negative ? "-" : "", val, max);
+			parse_warn ("%s%u exceeds max (%d) for precision.",
+				    negative ? "-" : "", val, max);
 			break;
 		}
 	}
@@ -510,7 +510,7 @@ void convert_num (buf, str, base, size)
 			putLong (buf, -(unsigned long)val);
 			break;
 		      default:
-			log_error ("Unexpected integer size: %d\n", size);
+			parse_warn ("Unexpected integer size: %d\n", size);
 			break;
 		}
 	} else {
@@ -525,7 +525,7 @@ void convert_num (buf, str, base, size)
 			putULong (buf, val);
 			break;
 		      default:
-			log_error ("Unexpected integer size: %d\n", size);
+			parse_warn ("Unexpected integer size: %d\n", size);
 			break;
 		}
 	}
@@ -536,6 +536,7 @@ void convert_num (buf, str, base, size)
  *		NUMBER COLON NUMBER COLON NUMBER SEMI |
  *          NUMBER NUMBER SLASH NUMBER SLASH NUMBER 
  *		NUMBER COLON NUMBER COLON NUMBER NUMBER SEMI |
+ *	    NEVER
  *
  * Dates are stored in GMT or with a timezone offset; first number is day
  * of week; next is year/month/day; next is hours:minutes:seconds on a
@@ -556,6 +557,12 @@ TIME parse_date (cfile)
 
 	/* Day of week... */
 	token = next_token (&val, cfile);
+	if (token == NEVER) {
+		if (!parse_semi (cfile))
+			return 0;
+		return MAX_TIME;
+	}
+
 	if (token != NUMBER) {
 		parse_warn ("numeric day of week expected.");
 		if (token != SEMI)
@@ -1836,6 +1843,8 @@ int parse_non_binary (expr, cfile, lose, context)
 		if (token != COMMA) {
 			parse_warn ("comma expected.");
 			*lose = 1;
+			expression_dereference
+				(expr, "parse_expression: EXTRACT_INT");
 			return 0;
 		}
 
@@ -1843,6 +1852,8 @@ int parse_non_binary (expr, cfile, lose, context)
 		if (token != NUMBER) {
 			parse_warn ("number expected.");
 			*lose = 1;
+			expression_dereference
+				(expr, "parse_expression: EXTRACT_INT");
 			return 0;
 		}
 		switch (atoi (val)) {
@@ -2226,6 +2237,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	int len;
 	unsigned char *ob;
 	struct iaddr addr;
+	int num;
 
 	switch (*fmt) {
 	      case 'U':
@@ -2245,8 +2257,11 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 		if (token == NUMBER_OR_NAME || token == NUMBER) {
 			if (!expression_allocate (&t, "parse_option_token"))
 				return 0;
-			if (!parse_cshl (&t -> data.const_data, cfile))
+			if (!parse_cshl (&t -> data.const_data, cfile)) {
+				expression_dereference
+					(&t, "parse_option_token: X");
 				return 0;
+			}
 			t -> op = expr_const_data;
 		} else if (token == STRING) {
 			token = next_token (&val, cfile);
@@ -2286,9 +2301,19 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 		}
 		break;
 		
+	      case 'T':	/* Lease interval. */
+		token = next_token (&val, cfile);
+		if (token != INFINITE)
+			goto check_number;
+		putLong (buf, -1);
+		if (!make_const_data (&t, buf, 4, 0, 1))
+			return 0;
+		break;
+
 	      case 'L': /* Unsigned 32-bit integer... */
 	      case 'l':	/* Signed 32-bit integer... */
 		token = next_token (&val, cfile);
+	      check_number:
 		if (token != NUMBER) {
 		      need_number:
 			parse_warn ("expecting number.");
