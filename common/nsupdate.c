@@ -25,7 +25,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: nsupdate.c,v 1.3.2.9 1999/10/28 16:07:38 mellon Exp $ Copyright (c) 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: nsupdate.c,v 1.3.2.11 1999/11/03 22:24:57 mellon Exp $ Copyright (c) 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -49,7 +49,7 @@ char *ddns_rev_name (lease, state, packet)
 	char pdq [128]; /* 4*3 %d +3 . +1 NUL */
 	struct data_string revdomain;
 	unsigned pqlen, rdlen;
-	static char inaddr [] = "inaddr.arpa";
+	static char inaddr [] = "in-addr.arpa";
 
 	/* Figure out what reverse domain to update
 	   First take the scoped "ddns-rev-domainname" option if present
@@ -74,7 +74,7 @@ char *ddns_rev_name (lease, state, packet)
 	if (revdomain.len)
 		rdlen = revdomain.len + 2;
 	else
-		rdlen += sizeof inaddr + 1;
+		rdlen = sizeof inaddr + 1;
 	revname = dmalloc (pqlen + rdlen, "ddns_rev_name");
 	if (!revname) {
 		log_error ("No memory to compute PTR name for %s", pdq);
@@ -411,27 +411,26 @@ void nsupdate (lease, state, packet, opcode)
 	case DELETE:
 		ttl = 0;
 		if (lease -> ddns_fwd_name) {
-			int y;
-			y = nsupdateA (lease -> ddns_fwd_name,
-				       piaddr (lease -> ip_addr), ttl, DELETE);
+			nsupdateA (lease -> ddns_fwd_name,
+				   piaddr (lease -> ip_addr), ttl, DELETE);
 
 
-			if (lease -> ddns_rev_name &&
-			    nsupdatePTR (lease -> ddns_fwd_name,
-					 lease -> ddns_rev_name, ttl, opcode))
-			{
-				/* clear the reverse DNS name pointer */
-				if (lease -> ddns_rev_name)
-					dfree(lease -> ddns_rev_name,
-					      "nsupdate");
+			if (lease -> ddns_rev_name)
+				nsupdatePTR (lease -> ddns_fwd_name,
+					     lease -> ddns_rev_name,
+					     ttl, opcode);
+			/* Chances are if the update fails, it's because
+			   the name is not present on the server, so
+			   whether or not the delete succeeds, we forget
+			   that the DNS server has the record. */
+			if (lease -> ddns_rev_name) {
+				dfree(lease -> ddns_rev_name, "nsupdate");
 				lease -> ddns_rev_name = 0;
 			}
 
-			if (y) {
-				/* clear the forward DNS name pointer */
-				if (lease -> ddns_fwd_name)
-					dfree(lease -> ddns_fwd_name,
-					      "nsupdate");
+			/* clear the forward DNS name pointer */
+			if (lease -> ddns_fwd_name) {
+				dfree(lease -> ddns_fwd_name, "nsupdate");
 				lease -> ddns_fwd_name = 0;
 			}
 		}
