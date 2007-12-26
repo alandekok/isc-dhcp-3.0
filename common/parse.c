@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: parse.c,v 1.104.2.8 2002/01/10 19:37:51 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: parse.c,v 1.104.2.6 2001/06/26 18:33:32 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -975,7 +975,7 @@ void parse_option_space_decl (cfile)
 		universes = ua;
 	}
 	universes [nu -> index] = nu;
-	option_new_hash (&nu -> hash, 1, MDL);
+	nu -> hash = new_hash (0, 0, 1, MDL);
 	if (!nu -> hash)
 		log_fatal ("Can't allocate %s option hash table.", nu -> name);
 	universe_hash_add (universe_hash, nu -> name, 0, nu, MDL);
@@ -1804,11 +1804,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 				executable_statement_dereference (result, MDL);
 				return 0;
 			}
-			if (parse_semi (cfile)) {
-				*lose = 1;
-				executable_statement_dereference (result, MDL);
-				return 0;
-			}
+			parse_semi (cfile);
 		}
 		break;
 
@@ -1832,11 +1828,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 		if (!(*result)->data.unset)
 			log_fatal ("can't allocate variable name");
 		strcpy ((*result) -> data.unset, val);
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-			return 0;
-		}
+		parse_semi (cfile);
 		break;
 
 	      case EVAL:
@@ -1858,10 +1850,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			executable_statement_dereference (result, MDL);
 			return 0;
 		}
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-		}
+		parse_semi (cfile);
 		break;
 
 	      case RETURN:
@@ -1883,11 +1872,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 			executable_statement_dereference (result, MDL);
 			return 0;
 		}
-		if (!parse_semi (cfile)) {
-			*lose = 1;
-			executable_statement_dereference (result, MDL);
-			return 0;
-		}
+		parse_semi (cfile);
 		break;
 
 	      case LOG:
@@ -2039,11 +2024,7 @@ int parse_executable_statement (result, cfile, lose, case_context)
 				executable_statement_dereference (result, MDL);
 				return 0;
 			}
-			if (!parse_semi (cfile)) {
-				*lose = 1;
-				executable_statement_dereference (result, MDL);
-				return 0;
-			}
+			parse_semi (cfile);
 			break;
 		}
 

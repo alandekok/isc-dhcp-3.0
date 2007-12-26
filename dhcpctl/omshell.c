@@ -429,11 +429,6 @@ int main (int argc, char **argv, char **envp)
 			    break;
 		    }
 
-		    if (!oh) {
-			    printf ("not open.\n");
-			    skip_to_semi (cfile);
-			    break;
-		    }
 		    omapi_object_dereference (&oh, MDL);
 		    
 		    break;

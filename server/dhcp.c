@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.20 2002/02/19 20:44:22 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.15 2001/10/04 22:21:00 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -206,8 +206,8 @@ void dhcp (packet)
 	if ((oc = lookup_option (&dhcp_universe, packet -> options,
 				 DHO_HOST_NAME))) {
 		if (!oc -> expression)
-			while (oc -> data.len &&
-			       oc -> data.data [oc -> data.len - 1] == 0) {
+			if (oc -> data.len &&
+			    oc -> data.data [oc -> data.len - 1] == 0) {
 				ms_nulltp = 1;
 				oc -> data.len--;
 			}
@@ -521,27 +521,6 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 			goto out;
 		}
 
-		/* If the lease is in a transitional state, we can't
-		   renew it. */
-		if ((lease -> binding_state == FTS_RELEASED ||
-		     lease -> binding_state == FTS_EXPIRED) &&
-		    !lease_mine_to_reallocate (lease)) {
-			log_debug ("%s: lease in transition state %s", msgbuf,
-				   lease -> binding_state == FTS_RELEASED
-				   ? "released" : "expired");
-			goto out;
-		}
-
-		/* It's actually very unlikely that we'll ever get here,
-		   but if we do, tell the client to stop using the lease,
-		   because the administrator reset it. */
-		if (lease -> binding_state == FTS_RESET &&
-		    !lease_mine_to_reallocate (lease)) {
-			log_debug ("%s: lease reset by administrator", msgbuf);
-			nak_lease (packet, &cip);
-			goto out;
-		}
-
 		/* At this point it's possible that we will get a broadcast
 		   DHCPREQUEST for a lease that we didn't offer, because
 		   both we and the peer are in a position to offer it.
@@ -733,14 +712,6 @@ void dhcprelease (packet, ms_nulltp)
 		find_lease_by_ip_addr (&lease, cip, MDL);
 	}
 
-
-	/* If the hardware address doesn't match, don't do the release. */
-	if (lease &&
-	    (lease -> hardware_addr.hlen != packet -> raw -> hlen + 1 ||
-	     lease -> hardware_addr.hbuf [0] != packet -> raw -> htype ||
-	     memcmp (&lease -> hardware_addr.hbuf [1],
-		     packet -> raw -> chaddr, packet -> raw -> hlen)))
-		lease_dereference (&lease, MDL);
 
 	if (lease && lease -> client_hostname &&
 	    db_printable (lease -> client_hostname))
@@ -1344,19 +1315,6 @@ void nak_lease (packet, cip)
 			data_string_forget (&data, MDL);
 		} else
 			goto use_primary;
-	}
-
-	/* If there were agent options in the incoming packet, return
-	   them. */
-	if (packet -> raw -> giaddr.s_addr &&
-	    packet -> options -> universe_count > agent_universe.index &&
-	    packet -> options -> universes [agent_universe.index]) {
-		option_chain_head_reference
-		    ((struct option_chain_head **)
-		     &(options -> universes [agent_universe.index]),
-		     (struct option_chain_head *)
-		     packet -> options -> universes [agent_universe.index],
-		     MDL);
 	}
 
 	/* Do not use the client's requested parameter list. */
@@ -2057,7 +2015,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		}
 
 		lt -> ends = state -> offered_expiry = cur_time + lease_time;
-		lt -> next_binding_state = FTS_ACTIVE;
+		lt -> next_binding_state = FTS_BOOTP;
 	}
 
 	lt -> timestamp = cur_time;
@@ -2983,6 +2941,7 @@ int find_lease (struct lease **lp,
 		   be two "free" leases for the same uid, but only one of
 		   them that's available for this failover peer to allocate. */
 		if (uid_lease -> binding_state != FTS_ACTIVE &&
+		    uid_lease -> binding_state != FTS_BOOTP &&
 		    !lease_mine_to_reallocate (uid_lease)) {
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not mine to allocate: %s",
@@ -3046,6 +3005,7 @@ int find_lease (struct lease **lp,
 		   be two "free" leases for the same uid, but only one of
 		   them that's available for this failover peer to allocate. */
 		if (hw_lease -> binding_state != FTS_ACTIVE &&
+		    hw_lease -> binding_state != FTS_BOOTP &&
 		    !lease_mine_to_reallocate (hw_lease)) {
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not mine to allocate: %s",
@@ -3178,6 +3138,7 @@ int find_lease (struct lease **lp,
 	   is not active, and is not ours to reallocate, forget about it. */
 	if (ip_lease && (uid_lease || hw_lease) &&
 	    ip_lease -> binding_state != FTS_ACTIVE &&
+	    ip_lease -> binding_state != FTS_BOOTP &&
 	    !lease_mine_to_reallocate (ip_lease) &&
 	    packet -> packet_type == DHCPDISCOVER) {
 #if defined (DEBUG_FIND_LEASE)
@@ -3190,14 +3151,16 @@ int find_lease (struct lease **lp,
 	   on the subnet that matches its uid, pick the one that
 	   it asked for and (if we can) free the other. */
 	if (ip_lease &&
-	    ip_lease -> binding_state == FTS_ACTIVE &&
+	    (ip_lease -> binding_state == FTS_ACTIVE ||
+	     ip_lease -> binding_state == FTS_BOOTP) &&
 	    ip_lease -> uid && ip_lease != uid_lease) {
 		if (have_client_identifier &&
 		    (ip_lease -> uid_len == client_identifier.len) &&
 		    !memcmp (client_identifier.data,
 			     ip_lease -> uid, ip_lease -> uid_len)) {
 			if (uid_lease) {
-			    if (uid_lease -> binding_state == FTS_ACTIVE) {
+			    if (uid_lease -> binding_state == FTS_ACTIVE ||
+				uid_lease -> binding_state == FTS_BOOTP) {
 				log_error ("client %s has duplicate%s on %s",
 					   (print_hw_addr
 					    (packet -> raw -> htype,
@@ -3211,7 +3174,10 @@ int find_lease (struct lease **lp,
 				   it shouldn't still be using the old
 				   one, so we can free it for allocation. */
 				if (uid_lease &&
-				    uid_lease -> binding_state == FTS_ACTIVE &&
+				    (uid_lease -> binding_state == FTS_ACTIVE
+				     ||
+				     uid_lease -> binding_state == FTS_BOOTP)
+				    &&
 				    !packet -> raw -> ciaddr.s_addr &&
 				    (share ==
 				     uid_lease -> subnet -> shared_network) &&
@@ -3366,7 +3332,8 @@ int find_lease (struct lease **lp,
 		if (lease) {
 			if (!packet -> raw -> ciaddr.s_addr &&
 			    packet -> packet_type == DHCPREQUEST &&
-			    uid_lease -> binding_state == FTS_ACTIVE)
+			    (uid_lease -> binding_state == FTS_ACTIVE ||
+			     uid_lease -> binding_state == FTS_BOOTP))
 				dissociate_lease (uid_lease);
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not choosing uid lease.");

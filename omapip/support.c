@@ -88,8 +88,7 @@ isc_result_t omapi_init (void)
 					     omapi_connection_stuff_values,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof
-					     (omapi_connection_object_t), 0,
-					     RC_MISC);
+					     (omapi_connection_object_t), 0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -102,7 +101,7 @@ isc_result_t omapi_init (void)
 					     omapi_listener_stuff_values,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof (omapi_listener_object_t),
-					     0, RC_MISC);
+					     0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -114,8 +113,7 @@ isc_result_t omapi_init (void)
 					     omapi_io_signal_handler,
 					     omapi_io_stuff_values,
 					     0, 0, 0, 0, 0, 0,
-					     sizeof (omapi_io_object_t),
-					     0, RC_MISC);
+					     sizeof (omapi_io_object_t), 0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -128,7 +126,7 @@ isc_result_t omapi_init (void)
 					     omapi_generic_stuff_values,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof (omapi_generic_object_t),
-					     0, RC_MISC);
+					     0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -141,7 +139,7 @@ isc_result_t omapi_init (void)
 					     omapi_protocol_stuff_values,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof (omapi_protocol_object_t),
-					     0, RC_MISC);
+					     0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -153,7 +151,7 @@ isc_result_t omapi_init (void)
 		   omapi_protocol_listener_signal,
 		   omapi_protocol_listener_stuff,
 		   0, 0, 0, 0, 0, 0,
-		   sizeof (omapi_protocol_listener_object_t), 0, RC_MISC));
+		   sizeof (omapi_protocol_listener_object_t), 0));
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -166,7 +164,7 @@ isc_result_t omapi_init (void)
 					     omapi_message_stuff_values,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof (omapi_message_object_t),
-					     0, RC_MISC);
+					     0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -178,7 +176,7 @@ isc_result_t omapi_init (void)
 					     omapi_waiter_signal_handler, 0,
 					     0, 0, 0, 0, 0, 0,
 					     sizeof (omapi_waiter_object_t),
-					     0, RC_MISC);
+					     0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -191,8 +189,7 @@ isc_result_t omapi_init (void)
 					     omapi_auth_key_stuff_values,
 					     omapi_auth_key_lookup,
 					     0, 0, 0, 0, 0,
-					     sizeof (omapi_auth_key_t), 0,
-					     RC_MISC);
+					     sizeof (omapi_auth_key_t), 0);
 	if (status != ISC_R_SUCCESS)
 		return status;
 
@@ -249,8 +246,7 @@ isc_result_t omapi_object_type_register (omapi_object_type_t **type,
 					 size_t size,
 					 isc_result_t (*initialize)
 						(omapi_object_t *,
-						 const char *, int),
-					 int rc_flag)
+						 const char *, int))
 {
 	omapi_object_type_t *t;
 
@@ -274,7 +270,6 @@ isc_result_t omapi_object_type_register (omapi_object_type_t **type,
 	t -> freer = freer;
 	t -> allocator = allocator;
 	t -> initialize = initialize;
-	t -> rc_flag = rc_flag;
 	omapi_object_types = t;
 	if (type)
 		*type = t;
