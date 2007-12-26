@@ -1141,7 +1141,7 @@ ssize_t receive_packet PROTO ((struct interface_info *,
 			       struct sockaddr_in *, struct hardware *));
 #endif
 
-#if defined (USE_SOCKET_SEND) || defined (USE_SOCKET_FALLBACK)
+#if defined (USE_SOCKET_FALLBACK)
 void fallback_discard PROTO ((struct protocol *));
 #endif
 
@@ -1557,3 +1557,13 @@ struct auth_key *auth_key_lookup PROTO ((struct data_string *));
 void enter_failover_peer PROTO ((struct failover_peer *));
 struct failover_peer *find_failover_peer PROTO ((char *));
 
+/* nsupdate.c */
+
+char *ddns_rev_name PROTO ((struct lease *,
+			    struct lease_state *, struct packet *));
+char *ddns_fwd_name PROTO ((struct lease *,
+			    struct lease_state *, struct packet *));
+int nsupdateA PROTO ((char *, char *, u_int32_t, int));
+int nsupdatePTR PROTO ((char *, char *, u_int32_t, int));
+void nsupdate PROTO ((struct lease *,
+		      struct lease_state *, struct packet *, int));

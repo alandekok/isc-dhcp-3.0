@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.100 1999/07/06 20:35:54 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.100.2.3 1999/10/07 21:36:27 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -348,7 +348,7 @@ void dhcpinform (packet)
 	struct option_state *options = (struct option_state *)0;
 	struct dhcp_packet raw;
 	struct packet outgoing;
-	char dhcpack = DHCPACK;
+	unsigned char dhcpack = DHCPACK;
 	struct subnet *subnet;
 	struct iaddr cip;
 	int i, j, nulltp;
@@ -896,7 +896,7 @@ void ack_lease (packet, lease, offer, when, msg)
 	   network interface, and will only ever remember one lease.   So
 	   if it sends a DHCPREQUEST, and doesn't get the lease, it's already
 	   forgotten about its old lease, so we can too. */
-	if (offer == DHCPREQUEST &&
+	if (packet -> packet_type == DHCPREQUEST &&
 	    (oc = lookup_option (&server_universe, state -> options,
 				 SV_ONE_LEASE_PER_CLIENT)) &&
 	    evaluate_boolean_option_cache (packet,
@@ -912,7 +912,7 @@ void ack_lease (packet, lease, offer, when, msg)
 					if (seek != lease &&
 					    seek -> ends > cur_time)
 						break;
-					seek = lease -> n_uid;
+					seek = seek -> n_uid;
 				}
 				if (seek) {
 					release_lease (seek);
@@ -927,7 +927,7 @@ void ack_lease (packet, lease, offer, when, msg)
 					if (seek != lease &&
 					    seek -> ends > cur_time)
 						break;
-					seek = lease -> n_hw;
+					seek = seek -> n_hw;
 				}
 				if (seek) {
 					release_lease (seek);
@@ -1239,7 +1239,7 @@ void ack_lease (packet, lease, offer, when, msg)
 	/* why not update for static leases too? */
 	/* Because static leases aren't currently recorded? */
 #if defined (NSUPDATE)
- 	if (!(lease -> flags & STATIC_LEASE) && offer == DHCPACK)
+ 	if (!(lease -> flags & STATIC_LEASE) && (offer == DHCPACK || !offer))
  		nsupdate (lease, state, packet, ADD);
 #endif
 
@@ -2458,9 +2458,15 @@ int permitted (packet, permit_list)
 			break;
 			
 		      case permit_class:
-			for (i = 0; i < packet -> class_count; i++)
+			for (i = 0; i < packet -> class_count; i++) {
 				if (p -> class == packet -> classes [i])
 					return 1;
+				if (packet -> classes [i] &&
+				    packet -> classes [i] -> superclass &&
+				    (packet -> classes [i] -> superclass ==
+				     p -> class))
+					return 1;
+			}
 			break;
 		}
 	}

@@ -94,7 +94,7 @@
 #  include "cf/sco.h"
 #endif
 
-#ifdef hpux
+#if defined (hpux) || defined (__hpux)
 #  include "cf/hpux.h"
 #endif
 
@@ -164,7 +164,9 @@
    fallback. */
 
 #if defined (USE_BPF_SEND) || defined (USE_NIT_SEND) || \
-    defined (USE_DLPI_SEND) || defined (USE_UPF_SEND) || defined (USE_LPF_SEND)
+    defined (USE_DLPI_SEND) || defined (USE_UPF_SEND) || \
+    defined (USE_LPF_SEND) || \
+    (defined (USE_SOCKET_SEND) && defined (SO_BINDTODEVICE))
 #  define USE_SOCKET_FALLBACK
 #  define USE_FALLBACK
 #endif
