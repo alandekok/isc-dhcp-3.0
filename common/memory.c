@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: memory.c,v 1.52.2.12 1999/12/22 20:30:20 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: memory.c,v 1.52.2.15 2000/07/01 05:54:22 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -117,9 +117,12 @@ void enter_host (hd)
 			/* Don't link it in twice... */
 			if (!np) {
 				for (np = hp; np -> n_ipaddr;
-				     np = np -> n_ipaddr)
-					;
-				np -> n_ipaddr = hd;
+				     np = np -> n_ipaddr) {
+					if (hd == np)
+						break;
+				}
+				if (hp != np)
+					np -> n_ipaddr = hd;
 			}
 		} else {
 			add_hash (host_uid_hash,
@@ -268,7 +271,8 @@ void new_address_range (low, high, subnet, pool)
 	if (!address_range) {
 		strcpy (lowbuf, piaddr (low));
 		strcpy (highbuf, piaddr (high));
-		log_fatal ("No memory for address range %s-%s.", lowbuf, highbuf);
+		log_fatal ("No memory for address range %s-%s.",
+			   lowbuf, highbuf);
 	}
 	memset (address_range, 0, (sizeof *address_range) * (max - min + 1));
 
@@ -531,9 +535,12 @@ int supersede_lease (comp, lease, commit)
 		enter_hwaddr = 1;
 	
 	/* If the lease has been billed to a class, remove the billing. */
-	if (comp -> billing_class &&
-	    comp -> billing_class != lease -> billing_class)
-		unbill_class (comp, comp -> billing_class);
+	if (comp -> billing_class != lease -> billing_class) {
+		if (comp -> billing_class)
+			unbill_class (comp, comp -> billing_class);
+		if (lease -> billing_class)
+			bill_class (comp, lease -> billing_class);
+	}
 
 	/* Copy the data files, but not the linkages. */
 	comp -> starts = lease -> starts;
