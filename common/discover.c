@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: discover.c,v 1.6 1999/03/16 05:50:33 mellon Exp $ Copyright (c) 1995, 1996, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: discover.c,v 1.8 1999/03/26 19:19:44 mellon Exp $ Copyright (c) 1995, 1996, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -121,11 +121,7 @@ void discover_interfaces (state)
 		/* Skip loopback, point-to-point and down interfaces,
 		   except don't skip down interfaces if we're trying to
 		   get a list of configurable interfaces. */
-		if ((((ifr.ifr_flags & IFF_LOOPBACK) ||
-#ifdef HAVE_IFF_POINTOPOINT
-		      (ifr.ifr_flags & IFF_POINTOPOINT))
-		     && !tmp) ||
-#endif
+		if ((!(ifr.ifr_flags & IFF_BROADCAST) && !tmp) ||
 		    (!(ifr.ifr_flags & IFF_UP) &&
 		     state != DISCOVER_UNCONFIGURED))
 			continue;
@@ -342,6 +338,9 @@ void discover_interfaces (state)
 		      case ARPHRD_TUNNEL:
 			/* ignore tunnel interfaces. */
 #endif
+#ifdef HAVE_ARPHRD_ROSE
+		      case ARPHRD_ROSE:
+#endif
 #ifdef HAVE_ARPHRD_LOOPBACK
 		      case ARPHRD_LOOPBACK:
 			/* ignore loopback interface */
@@ -354,7 +353,7 @@ void discover_interfaces (state)
 			memcpy (tmp -> hw_address.haddr, sa.sa_data, 6);
 			break;
 
-#ifndef ARPHRD_IEEE802
+#ifndef HAVE_ARPHRD_IEEE802
 # define ARPHRD_IEEE802 HTYPE_IEEE802
 #endif
 		      case ARPHRD_IEEE802:
@@ -363,7 +362,7 @@ void discover_interfaces (state)
 			memcpy (tmp -> hw_address.haddr, sa.sa_data, 6);
 			break;
 
-#ifndef ARPHRD_FDDI
+#ifndef HAVE_ARPHRD_FDDI
 # define ARPHRD_FDDI HTYPE_FDDI
 #endif
 		      case ARPHRD_FDDI:
@@ -380,9 +379,26 @@ void discover_interfaces (state)
 			break;
 #endif
 
+#ifdef HAVE_ARPHRD_AX25
+		      case ARPHRD_AX25:
+			tmp -> hw_address.hlen = 6;
+			tmp -> hw_address.htype = ARPHRD_AX25;
+			memcpy (tmp -> hw_address.haddr, sa.sa_data, 6);
+			break;
+#endif
+
+#ifdef HAVE_ARPHRD_NETROM
+		      case ARPHRD_NETROM:
+			tmp -> hw_address.hlen = 6;
+			tmp -> hw_address.htype = ARPHRD_NETROM;
+			memcpy (tmp -> hw_address.haddr, sa.sa_data, 6);
+			break;
+#endif
+
 		      default:
-			log_fatal ("%s: unknown hardware address type %d",
-			       ifr.ifr_name, sa.sa_family);
+			log_error ("%s: unknown hardware address type %d",
+				   ifr.ifr_name, sa.sa_family);
+			break;
 		}
 	}
 #endif /* defined (HAVE_SIOCGIFHWADDR) && !defined (HAVE_AF_LINK) */

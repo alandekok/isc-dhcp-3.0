@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: packet.c,v 1.21 1999/03/16 05:50:36 mellon Exp $ Copyright (c) 1996 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: packet.c,v 1.23 1999/03/26 19:19:44 mellon Exp $ Copyright (c) 1996 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -174,17 +174,15 @@ void assemble_udp_ip_header (interface, buf, bufix,
 	/* Compute UDP checksums, including the ``pseudo-header'', the UDP
 	   header and the data. */
 
-#if 0
 	udp.uh_sum =
 		wrapsum (checksum ((unsigned char *)&udp, sizeof udp,
 				   checksum (data, len, 
 					     checksum ((unsigned char *)
 						       &ip.ip_src,
-						       sizeof ip.ip_src,
+						       2 * sizeof ip.ip_src,
 						       IPPROTO_UDP +
 						       (u_int32_t)
 						       ntohs (udp.uh_ulen)))));
-#endif
 
 	/* Copy the udp header into the buffer... */
 	memcpy (&buf [*bufix], &udp, sizeof udp);
@@ -247,8 +245,13 @@ ssize_t decode_udp_ip_header (interface, buf, bufix, from, data, len)
 
   /* Check the IP header checksum - it should be zero. */
   if (wrapsum (checksum (buf + bufix, ip_len, 0))) {
-	  log_info ("Bad IP checksum: %x",
-		wrapsum (checksum (buf + bufix, sizeof *ip, 0)));
+	  static int packets_seen;
+	  static int packets_bad_checksum;
+
+	  if (packets_seen &&
+	      (++packets_seen / ++packets_bad_checksum) < 2)
+		  log_info ("Bad IP checksum: %x",
+			    wrapsum (checksum (buf + bufix, sizeof *ip, 0)));
 	  return -1;
   }
 
@@ -264,7 +267,6 @@ ssize_t decode_udp_ip_header (interface, buf, bufix, from, data, len)
 	  len -= ip_len + sizeof *udp;
   }
 
-#if 0
   usum = udp -> uh_sum;
   udp -> uh_sum = 0;
 
@@ -272,16 +274,19 @@ ssize_t decode_udp_ip_header (interface, buf, bufix, from, data, len)
 			   checksum (data, len,
 				     checksum ((unsigned char *)
 					       &ip -> ip_src,
-					       sizeof ip -> ip_src,
+					       2 * sizeof ip -> ip_src,
 					       IPPROTO_UDP +
 					       (u_int32_t)
 					       ntohs (udp -> uh_ulen)))));
 
   if (usum && usum != sum) {
-	  log_info ("Bad udp checksum: %x %x", usum, sum);
+	  static int packets_seen;
+	  static int packets_bad_checksum;
+	  if (packets_seen &&
+	      (++packets_seen / ++packets_bad_checksum) < 2)
+		  log_info ("Bad udp checksum: %x %x", usum, sum);
 	  return -1;
   }
-#endif
 
   /* Copy out the port... */
   memcpy (&from -> sin_port, &udp -> uh_sport, sizeof udp -> uh_sport);

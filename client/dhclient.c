@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.62 1999/03/16 05:50:30 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.65 1999/03/26 21:27:23 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -54,7 +54,7 @@ struct sockaddr_in sockaddr_broadcast;
 static char copyright[] =
 "Copyright 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.";
 static char arr [] = "All rights reserved.";
-static char message [] = "Internet Software Consortium DHCP Client V3.0-alpha-990315";
+static char message [] = "Internet Software Consortium DHCP Client V3.0-alpha-990326";
 static char contrib [] = "\nPlease contribute if you find this software useful.";
 static char url [] = "For info, please visit http://www.isc.org/dhcp-contrib.html\n";
 
@@ -475,7 +475,9 @@ void dhcpack (packet)
 	     packet -> raw -> hlen) ||
 	    (memcmp (packet -> interface -> hw_address.haddr,
 		     packet -> raw -> chaddr, packet -> raw -> hlen))) {
+#if defined (DEBUG)
 		log_debug ("DHCPACK in wrong transaction.");
+#endif
 		return;
 	}
 
@@ -483,7 +485,9 @@ void dhcpack (packet)
 	    client -> state != S_REQUESTING &&
 	    client -> state != S_RENEWING &&
 	    client -> state != S_REBINDING) {
+#if defined (DEBUG)
 		log_debug ("DHCPACK in wrong state.");
+#endif
 		return;
 	}
 
@@ -786,7 +790,9 @@ void dhcpoffer (packet)
 	     packet -> raw -> hlen) ||
 	    (memcmp (packet -> interface -> hw_address.haddr,
 		     packet -> raw -> chaddr, packet -> raw -> hlen))) {
+#if defined (DEBUG)
 		log_debug ("%s in wrong transaction.", name);
+#endif
 		return;
 	}
 
@@ -966,7 +972,9 @@ void dhcpnak (packet)
 	     packet -> raw -> hlen) ||
 	    (memcmp (packet -> interface -> hw_address.haddr,
 		     packet -> raw -> chaddr, packet -> raw -> hlen))) {
+#if defined (DEBUG)
 		log_debug ("DHCPNAK in wrong transaction.");
+#endif
 		return;
 	}
 
@@ -974,14 +982,18 @@ void dhcpnak (packet)
 	    client -> state != S_REQUESTING &&
 	    client -> state != S_RENEWING &&
 	    client -> state != S_REBINDING) {
+#if defined (DEBUG)
 		log_debug ("DHCPNAK in wrong state.");
+#endif
 		return;
 	}
 
 	log_info ("DHCPNAK from %s", piaddr (packet -> client_addr));
 
 	if (!client -> active) {
+#if defined (DEBUG)
 		log_info ("DHCPNAK with no active lease.\n");
+#endif
 		return;
 	}
 
@@ -1080,10 +1092,11 @@ void send_discover (cpp)
 			 client -> config -> timeout) - cur_time + 1;
 
 	/* Record the number of seconds since we started sending. */
-	if (interval < 255)
-		client -> packet.secs = interval;
+	if (interval < 65536)
+		client -> packet.secs = htons (interval);
 	else
-		client -> packet.secs = 255;
+		client -> packet.secs = htons (65535);
+	client -> secs = client -> packet.secs;
 
 	log_info ("DHCPDISCOVER on %s to %s port %d interval %ld",
 	      client -> name ? client -> name : client -> interface -> name,
@@ -1320,10 +1333,14 @@ void send_request (cpp)
 		from.s_addr = INADDR_ANY;
 
 	/* Record the number of seconds since we started sending. */
-	if (interval < 255)
-		client -> packet.secs = interval;
-	else
-		client -> packet.secs = 255;
+	if (client -> state == S_REQUESTING)
+		client -> packet.secs = client -> secs;
+	else {
+		if (interval < 65536)
+			client -> packet.secs = htons (interval);
+		else
+			client -> packet.secs = htons (65535);
+	}
 
 	log_info ("DHCPREQUEST on %s to %s port %d",
 	      client -> name ? client -> name : client -> interface -> name,
@@ -1460,29 +1477,6 @@ void make_client_options (client, lease, type, sid, rip, prl,
 			}
 		}
 	}
-
-	if (!(oc = lookup_option (options -> dhcp_hash,
-				  DHO_DHCP_LEASE_TIME))) {
-		if (!buffer_allocate (&bp, sizeof (u_int32_t),
-				      "make_client_options"))
-			log_error ("can't make buffer for requested lease time.");
-		else {
-			putULong (bp -> data,
-				  client -> config -> requested_lease);
-			if (!(make_const_option_cache
-			      (&oc, &bp, (u_int8_t *)0, sizeof (u_int32_t),
-			       &dhcp_options [DHO_DHCP_LEASE_TIME],
-			       "make_client_options")))
-				log_error ("can't make option cache");
-			else {
-				save_option (options -> dhcp_hash, oc);
-				option_cache_dereference
-					(&oc, "make_client_options");
-			}
-		}
-	}		
-	/* oc = (struct option_cache *)0; (we'd need this if we were
-	   				   going to use oc again */
 
 	/* Run statements that need to be run on transmission. */
 	if (client -> config -> on_transmission)
