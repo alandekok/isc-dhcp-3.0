@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: discover.c,v 1.42.2.7 2001/06/21 16:46:09 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: discover.c,v 1.42.2.9 2002/03/12 06:46:17 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -94,7 +94,7 @@ isc_result_t interface_setup ()
 					     dhcp_interface_remove,
 					     0, 0, 0,
 					     sizeof (struct interface_info),
-					     interface_initialize);
+					     interface_initialize, RC_MISC);
 	if (status != ISC_R_SUCCESS)
 		log_fatal ("Can't register interface object type: %s",
 			   isc_result_totext (status));
@@ -407,8 +407,11 @@ void discover_interfaces (state)
 					   name, isc_result_totext (status));
 			tmp -> flags = ir;
 			strncpy (tmp -> name, name, IFNAMSIZ);
-			interface_reference (&tmp -> next, interfaces, MDL);
-			interface_dereference (&interfaces, MDL);
+			if (interfaces) {
+				interface_reference (&tmp -> next,
+						     interfaces, MDL);
+				interface_dereference (&interfaces, MDL);
+			}
 			interface_reference (&interfaces, tmp, MDL);
 			interface_dereference (&tmp, MDL);
 			tmp = interfaces;
