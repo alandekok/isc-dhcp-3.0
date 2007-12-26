@@ -18,10 +18,10 @@
 #ifndef ISC_RESULT_H
 #define ISC_RESULT_H 1
 
-#include <isc/boolean.h>
-#include <isc/lang.h>
-#include <isc/list.h>
-#include <isc/types.h>
+#include <isc-dhcp/boolean.h>
+#include <isc-dhcp/lang.h>
+#include <isc-dhcp/list.h>
+#include <isc-dhcp/types.h>
 
 ISC_LANG_BEGINDECLS
 
@@ -93,11 +93,13 @@ typedef enum {
 	ISC_R_DESTADDRREQ = 64,
 	ISC_R_CROSSZONE = 65,
 	ISC_R_NO_TSIG = 66,
-	ISC_R_NOT_EQUAL = 67
+	ISC_R_NOT_EQUAL = 67,
+	ISC_R_CONNRESET = 68,
+	ISC_R_UNKNOWNATTRIBUTE = 69
 } isc_result_t;
 
 
-#define ISC_R_NRESULTS 			68	/* Number of results */
+#define ISC_R_NRESULTS 			70	/* Number of results */
 
 const char *		isc_result_totext(isc_result_t);
 isc_result_t		isc_result_register(unsigned int base,

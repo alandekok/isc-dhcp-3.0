@@ -230,11 +230,13 @@ isc_result_t omapi_message_destroy (omapi_object_t *h,
 	if (!m -> prev && omapi_registered_messages != m)
 		omapi_message_unregister (h);
 	if (m -> id_object)
-		omapi_object_dereference ((omapi_object_t **)&m -> id_object,
-					  file, line);
+		omapi_object_dereference (&m -> id_object, file, line);
 	if (m -> object)
-		omapi_object_dereference ((omapi_object_t **)&m -> object,
-					  file, line);
+		omapi_object_dereference (&m -> object, file, line);
+	if (m -> notify_object)
+		omapi_object_dereference (&m -> notify_object, file, line);
+	if (m -> protocol_object)
+		omapi_protocol_dereference (&m -> protocol_object, file, line);
 	return ISC_R_SUCCESS;
 }
 
@@ -545,12 +547,6 @@ omapi_message_process_internal (omapi_object_t *mo, omapi_object_t *po)
 				 "unsearchable object type");
 		}
 
-		if (!message -> object) {
-			return omapi_protocol_send_status
-				(po, message -> id_object,
-				 ISC_R_NOTFOUND, message -> id,
-				 "no lookup key specified");
-		}
 		status = (*(type -> lookup)) (&object, message -> id_object,
 					      message -> object);
 
