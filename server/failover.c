@@ -3,7 +3,7 @@
    Failover protocol support code... */
 
 /*
- * Copyright (c) 1999-2001 Internet Software Consortium.
+ * Copyright (c) 1999-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.53.2.22 2001/11/05 01:54:40 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.24 2002/02/20 05:35:34 mellon Exp $ Copyright (c) 1999-2002 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -2234,10 +2234,7 @@ int dhcp_failover_pool_check (struct pool *pool)
 	struct lease *lp;
 	int tenper;
 
-	/* According to the draft, only the secondary ever sends a pool
-	   request, but this doesn't really make a lot of sense. */
 	if (!pool -> failover_peer ||
-/*	    pool -> failover_peer -> i_am == primary || */
 	    pool -> failover_peer -> me.state != normal)
 		return 0;
 
@@ -2257,8 +2254,32 @@ int dhcp_failover_pool_check (struct pool *pool)
 		tenper = 1;
 	if (lts > tenper) {
 		/* XXX What about multiple pools? */
-		dhcp_failover_send_poolreq (pool -> failover_peer);
-		return 1;
+		if (pool -> failover_peer -> i_am == secondary) {
+			/* Ask the primary to send us leases. */
+			dhcp_failover_send_poolreq (pool -> failover_peer);
+			return 1;
+		} else {
+			/* Figure out how many leases to skip on the backup
+			   list.   We skip the earliest leases on the list
+			   to reduce the chance of trying to steal a lease
+			   that the secondary is about to allocate. */
+			int i = pool -> backup_leases - lts;
+			log_info ("Taking %d leases from secondary.", lts);
+			for (lp = pool -> backup; lp; lp = lp -> next) {
+				/* Skip to the last leases on the free
+				   list, because they are less likely
+				   to already have been allocated. */
+				if (i)
+					--i;
+				else {
+					lp -> desired_binding_state = FTS_FREE;
+					dhcp_failover_queue_update (lp, 1);
+					--lts;
+				}
+			}
+			if (lts)
+				log_info ("failed to take %d leases.", lts);
+		}
 	}
 	return 0;
 }
@@ -4055,7 +4076,7 @@ isc_result_t dhcp_failover_send_bind_update (dhcp_failover_state_t *state,
 					      lease -> ip_addr.len,
 					      lease -> ip_addr.iabuf),
 		   dhcp_failover_make_option (FTO_BINDING_STATUS, FMA,
-					      lease -> binding_state),
+					      lease -> desired_binding_state),
 		   lease -> uid_len
 		   ? dhcp_failover_make_option (FTO_CLIENT_IDENTIFIER, FMA,
 						lease -> uid_len,
@@ -4565,12 +4586,33 @@ isc_result_t dhcp_failover_process_bind_ack (dhcp_failover_state_t *state,
 				commit_leases ();
 		} else {
 			lease -> tsfp = msg -> potential_expiry;
+			if ((lease -> desired_binding_state !=
+			     lease -> binding_state) &&
+			    (msg -> options_present & FTB_BINDING_STATUS) &&
+			    (msg -> binding_status ==
+			     lease -> desired_binding_state)) {
+				lease -> next_binding_state =
+					lease -> desired_binding_state;
+				supersede_lease (lease,
+						 (struct lease *)0, 0, 0, 0);
+			}
 			write_lease (lease);
-#if 0 /* XXX This might be needed. */
-			if (state -> me.state == normal)
-				commit_leases ();
-#endif
+			/* Commit the lease only after a two-second timeout,
+			   so that if we get a bunch of acks in quick 
+			   successtion (e.g., when stealing leases from the
+			   secondary), we do not do an immediate commit for
+			   each one. */
+			add_timeout (cur_time + 2,
+				     commit_leases_timeout, (void *)0, 0, 0);
 		}
+	} else if (lease -> desired_binding_state != lease -> binding_state &&
+		   (msg -> options_present & FTB_BINDING_STATUS) &&
+		   msg -> binding_status == lease -> desired_binding_state) {
+		lease -> next_binding_state = lease -> desired_binding_state;
+		supersede_lease (lease, (struct lease *)0, 0, 0, 0);
+		write_lease (lease);
+		add_timeout (cur_time + 2, commit_leases_timeout,
+			     (void *)0, 0, 0);
 	}
 
       unqueue:
@@ -4674,6 +4716,7 @@ isc_result_t dhcp_failover_generate_update_queue (dhcp_failover_state_t *state,
 			      (l -> starts != MIN_TIME ||
 			       l -> ends != MIN_TIME)) ||
 			     l -> tstp > l -> tsfp)) {
+				l -> desired_binding_state = l -> binding_state;
 				dhcp_failover_queue_update (l, 0);
 			}
 		    }
@@ -4925,8 +4968,6 @@ normal_binding_state_transition_check (struct lease *lease,
 		      case FTS_ACTIVE:
 		      case FTS_ABANDONED:
 		      case FTS_BACKUP:
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_EXPIRED:
 		      case FTS_RELEASED:
 		      case FTS_RESET:
@@ -4947,8 +4988,6 @@ normal_binding_state_transition_check (struct lease *lease,
 			goto out;
 		}
 	      case FTS_ACTIVE:
-	      case FTS_RESERVED:
-	      case FTS_BOOTP:
 		/* The secondary can't change the state of an active
 		   lease. */
 		if (state -> i_am == primary) {
@@ -4973,13 +5012,16 @@ normal_binding_state_transition_check (struct lease *lease,
 			return binding_state;
 
 		      case FTS_EXPIRED:
-			if (lease -> ends > cur_time) {
+			/* XXX 65 should be the clock skew between the peers
+			   XXX plus a fudge factor.   This code will result
+			   XXX in problems if MCLT is really short or the
+			   XXX max-lease-time is really short (less than the
+			   XXX fudge factor. */
+			if (lease -> ends + 65 > cur_time) {
 				new_state = lease -> binding_state;
 				goto out;
 			}
 
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_RELEASED:
 		      case FTS_ABANDONED:
 		      case FTS_RESET:
@@ -5000,8 +5042,6 @@ normal_binding_state_transition_check (struct lease *lease,
 			}
 			return binding_state;
 
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_ACTIVE:
 		      case FTS_RELEASED:
 		      case FTS_ABANDONED:
@@ -5016,8 +5056,6 @@ normal_binding_state_transition_check (struct lease *lease,
 
 			/* These are invalid state transitions - should we
 			   prevent them? */
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_EXPIRED:
 		      case FTS_ABANDONED:
 		      case FTS_RESET:
@@ -5038,8 +5076,6 @@ normal_binding_state_transition_check (struct lease *lease,
 			return binding_state;
 
 		      case FTS_ACTIVE:
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_EXPIRED:
 		      case FTS_RELEASED:
 		      case FTS_ABANDONED:
@@ -5050,17 +5086,20 @@ normal_binding_state_transition_check (struct lease *lease,
 		switch (binding_state) {
 		      case FTS_ACTIVE:
 		      case FTS_ABANDONED:
-		      case FTS_FREE:
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 		      case FTS_EXPIRED:
 		      case FTS_RELEASED:
 		      case FTS_RESET:
-			/* If the lease was in backup, and our peer is
-			   secondary, then it can make it active, or
-			   abandoned, or free. */
+			/* If the lease was in backup, and our peer
+			   is secondary, then it can make it active
+			   or abandoned. */
 			if (state -> i_am == primary)
 				return binding_state;
+
+			/* Either the primary or the secondary can
+			   reasonably move a lease from the backup
+			   state to the free state. */
+		      case FTS_FREE:
+			return binding_state;
 
 		      case FTS_BACKUP:
 			new_state = lease -> binding_state;
@@ -5102,8 +5141,6 @@ conflict_binding_state_transition_check (struct lease *lease,
 			   going to take the partner's change if the partner
 			   thinks it's free. */
 		      case FTS_ACTIVE:
-		      case FTS_RESERVED:
-		      case FTS_BOOTP:
 			switch (binding_state) {
 			      case FTS_FREE:
 			      case FTS_BACKUP:
@@ -5121,8 +5158,6 @@ conflict_binding_state_transition_check (struct lease *lease,
 					new_state = binding_state;
 				break;
 
-			      case FTS_RESERVED:
-			      case FTS_BOOTP:
 			      case FTS_ACTIVE:
 				new_state = binding_state;
 				break;
@@ -5174,8 +5209,6 @@ int lease_mine_to_reallocate (struct lease *lease)
 		      case FTS_RESET:
 		      case FTS_RELEASED:
 		      case FTS_EXPIRED:
-		      case FTS_BOOTP:
-		      case FTS_RESERVED:
 			if (peer -> service_state == service_partner_down &&
 			    (lease -> tsfp < peer -> me.stos
 			     ? peer -> me.stos + peer -> mclt < cur_time
@@ -5281,14 +5314,6 @@ const char *binding_state_print (enum failover_state state)
 
 	      case FTS_BACKUP:
 		return "backup";
-		break;
-
-	      case FTS_RESERVED:
-		return "reserved";
-		break;
-
-	      case FTS_BOOTP:
-		return "bootp";
 		break;
 
 	      default:

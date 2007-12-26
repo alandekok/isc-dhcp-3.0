@@ -3,7 +3,7 @@
    Server-specific in-memory database support. */
 
 /*
- * Copyright (c) 1996-2001 Internet Software Consortium.
+ * Copyright (c) 1996-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: mdb.c,v 1.67.2.14 2002/01/17 18:46:02 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: mdb.c,v 1.67.2.16 2002/02/20 05:46:46 mellon Exp $ Copyright (c) 1996-2002 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -571,8 +571,10 @@ void new_address_range (low, high, subnet, pool, lpchain)
 					lp -> ip_addr.len, lp, MDL);
 		/* Put the lease on the chain for the caller. */
 		if (lpchain) {
-			lease_reference (&lp -> next, *lpchain, MDL);
-			lease_dereference (lpchain, MDL);
+			if (*lpchain) {
+				lease_reference (&lp -> next, *lpchain, MDL);
+				lease_dereference (lpchain, MDL);
+			}
 			lease_reference (lpchain, lp, MDL);
 		}
 		lease_dereference (&lp, MDL);
@@ -829,9 +831,7 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 
 	if (lease -> binding_state != FTS_ABANDONED &&
 	    lease -> next_binding_state != FTS_ABANDONED &&
-	    (comp -> binding_state == FTS_ACTIVE ||
-	     comp -> binding_state == FTS_RESERVED ||
-	     comp -> binding_state == FTS_BOOTP) &&
+	    comp -> binding_state == FTS_ACTIVE &&
 	    (((comp -> uid && lease -> uid) &&
 	      (comp -> uid_len != lease -> uid_len ||
 	       memcmp (comp -> uid, lease -> uid, comp -> uid_len))) ||
@@ -920,9 +920,7 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 		/* Only retain the agent options if the lease is still
 		   affirmatively associated with a client. */
 		if (lease -> next_binding_state == FTS_ACTIVE ||
-		    lease -> next_binding_state == FTS_EXPIRED ||
-		    lease -> next_binding_state == FTS_RESERVED ||
-		    lease -> next_binding_state == FTS_BOOTP)
+		    lease -> next_binding_state == FTS_EXPIRED)
 			option_chain_head_reference (&comp -> agent_options,
 						     lease -> agent_options,
 						     MDL);
@@ -992,8 +990,6 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 		break;
 
 	      case FTS_ACTIVE:
-	      case FTS_RESERVED:
-	      case FTS_BOOTP:
 		lq = &comp -> pool -> active;
 		break;
 
@@ -1033,7 +1029,7 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 	if (!lp) {
 		log_error ("Lease with binding state %s not on its queue.",
 			   (comp -> binding_state < 1 &&
-			    comp -> binding_state < FTS_BOOTP)
+			    comp -> binding_state < FTS_LAST)
 			   ? "unknown"
 			   : binding_state_names [comp -> binding_state - 1]);
 		return 0;
@@ -1094,6 +1090,7 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 
 #if defined (FAILOVER_PROTOCOL)
 	if (propogate) {
+		comp -> desired_binding_state = comp -> binding_state;
 		if (!dhcp_failover_queue_update (comp, pimmediate))
 			return 0;
 	}
@@ -1134,9 +1131,7 @@ void make_binding_state_transition (struct lease *lease)
 		     lease -> next_binding_state == FTS_BACKUP)) ||
 	     (!peer &&
 #endif
-	      (lease -> binding_state == FTS_ACTIVE ||
-	       lease -> binding_state == FTS_BOOTP ||
-	       lease -> binding_state == FTS_RESERVED) &&
+	      lease -> binding_state == FTS_ACTIVE &&
 	      lease -> next_binding_state != FTS_RELEASED))) {
 #if defined (NSUPDATE)
 		ddns_removals (lease);
@@ -1187,9 +1182,7 @@ void make_binding_state_transition (struct lease *lease)
 		     lease -> next_binding_state == FTS_BACKUP)) ||
 	     (!peer &&
 #endif
-	      (lease -> binding_state == FTS_ACTIVE ||
-	       lease -> binding_state == FTS_BOOTP ||
-	       lease -> binding_state == FTS_RESERVED) &&
+	      lease -> binding_state == FTS_ACTIVE &&
 	      lease -> next_binding_state == FTS_RELEASED))) {
 #if defined (NSUPDATE)
 		ddns_removals (lease);
@@ -1240,7 +1233,6 @@ void make_binding_state_transition (struct lease *lease)
 	lease -> binding_state = lease -> next_binding_state;
 	switch (lease -> binding_state) {
 	      case FTS_ACTIVE:
-	      case FTS_BOOTP:
 #if defined (FAILOVER_PROTOCOL)
 		if (lease -> pool && lease -> pool -> failover_peer)
 			lease -> next_binding_state = FTS_EXPIRED;
@@ -1267,7 +1259,6 @@ void make_binding_state_transition (struct lease *lease)
 
 	      case FTS_FREE:
 	      case FTS_BACKUP:
-	      case FTS_RESERVED:
 		lease -> next_binding_state = lease -> binding_state;
 		break;
 	}
@@ -1827,9 +1818,12 @@ int write_leases ()
 
 		for (i = FREE_LEASES; i <= BACKUP_LEASES; i++) {
 		    for (l = *(lptr [i]); l; l = l -> next) {
+#if !defined (DEBUG_DUMP_ALL_LEASES)
 			if (l -> hardware_addr.hlen ||
 			    l -> uid_len ||
-			    (l -> binding_state != FTS_FREE)) {
+			    (l -> binding_state != FTS_FREE))
+#endif
+			{
 			    if (!write_lease (l))
 				    return 0;
 			    num_written++;
@@ -1861,8 +1855,6 @@ int lease_enqueue (struct lease *comp)
 		break;
 
 	      case FTS_ACTIVE:
-	      case FTS_RESERVED:
-	      case FTS_BOOTP:
 		lq = &comp -> pool -> active;
 		comp -> sort_time = comp -> ends;
 		break;
@@ -1959,9 +1951,7 @@ void lease_instantiate (const unsigned char *val, unsigned len,
 		if (lease -> binding_state == FTS_ACTIVE ||
 		    lease -> binding_state == FTS_EXPIRED ||
 		    lease -> binding_state == FTS_RELEASED ||
-		    lease -> binding_state == FTS_RESET ||
-		    lease -> binding_state == FTS_RESERVED ||
-		    lease -> binding_state == FTS_BOOTP)
+		    lease -> binding_state == FTS_RESET)
 			bill_class (lease, class);
 		class_dereference (&class, MDL);
 	}
@@ -2014,8 +2004,10 @@ void expire_all_pools ()
 #if defined (FAILOVER_PROTOCOL)
 			if (p -> failover_peer &&
 			    l -> tstp > l -> tsfp &&
-			    !(l -> flags & ON_UPDATE_QUEUE))
+			    !(l -> flags & ON_UPDATE_QUEUE)) {
+				l -> desired_binding_state = l -> binding_state;
 				dhcp_failover_queue_update (l, 1);
+			}
 #endif
 		    }
 		}
@@ -2064,7 +2056,7 @@ HASH_FUNCTIONS (host, const unsigned char *, struct host_decl, host_hash_t,
 HASH_FUNCTIONS (class, const char *, struct class, class_hash_t,
 		class_reference, class_dereference)
 
-#if defined (DEBUG_MEMORY_LEAKAGE) || \
+#if defined (DEBUG_MEMORY_LEAKAGE) && \
 		defined (DEBUG_MEMORY_LEAKAGE_ON_EXIT)
 extern struct hash_table *dns_zone_hash;
 extern struct interface_info **interface_vector;
@@ -2335,4 +2327,4 @@ void free_everything ()
 	relinquish_hash_bucket_hunks ();
 	omapi_type_relinquish ();
 }
-#endif /* DEBUG_MEMORY_LEAKAGE */
+#endif /* DEBUG_MEMORY_LEAKAGE_ON_EXIT */
