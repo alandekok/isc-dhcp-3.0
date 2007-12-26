@@ -41,7 +41,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.127 2001/04/05 22:37:35 mellon Exp $ Copyright (c) 1995-2001 Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.129 2001/04/16 22:07:33 mellon Exp $ Copyright (c) 1995-2001 Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -79,11 +79,11 @@ static char url [] = "For info, please visit http://www.isc.org/products/DHCP";
 u_int16_t local_port;
 u_int16_t remote_port;
 int no_daemon;
-int save_scripts;
 struct string_list *client_env;
 int client_env_count;
 int onetry;
 int quiet;
+int nowait;
 
 static void usage PROTO ((void));
 
@@ -159,8 +159,6 @@ int main (argc, argv, envp)
 			       ntohs (local_port));
 		} else if (!strcmp (argv [i], "-d")) {
 			no_daemon = 1;
-		} else if (!strcmp (argv [i], "-D")) {
-			save_scripts = 1;
                 } else if (!strcmp (argv [i], "-pf")) {
                         if (++i == argc)
                                 usage ();
@@ -216,6 +214,8 @@ int main (argc, argv, envp)
 		} else if (!strcmp (argv [i], "--version")) {
 			log_info ("isc-dhclient-%s", DHCP_VERSION);
 			exit (0);
+		} else if (!strcmp (argv [i], "-nw")) {
+			nowait = 1;
  		} else {
  		    struct interface_info *tmp = (struct interface_info *)0;
 		    status = interface_allocate (&tmp, MDL);
@@ -451,9 +451,14 @@ int main (argc, argv, envp)
 	dmalloc_outstanding = 0;
 #endif
 
+	/* If we're not supposed to wait before getting the address,
+	   don't. */
+	if (nowait)
+		go_daemon ();
+
 	/* If we're not going to daemonize, write the pid file
 	   now. */
-	if (no_daemon)
+	if (no_daemon || nowait)
 		write_client_pid_file ();
 
 	/* Start dispatching packets and timeouts... */
@@ -470,7 +475,7 @@ static void usage ()
 	log_info (arr);
 	log_info (url);
 
-	log_error ("Usage: dhclient [-1dDqr] [-p <port>] %s",
+	log_error ("Usage: dhclient [-1dqr] [-nw] [-p <port>] %s",
 		   "[-s server]");
 	log_error ("                [-cf config-file] [-lf lease-file]%s",
 		   "[-pf pid-file] [-e VAR=val]");
@@ -1805,7 +1810,6 @@ void make_discover (client, lease)
 	struct client_state *client;
 	struct client_lease *lease;
 {
-	struct dhcp_packet *raw;
 	unsigned char discover = DHCPDISCOVER;
 	int i;
 	struct option_state *options = (struct option_state *)0;
@@ -1853,9 +1857,7 @@ void make_discover (client, lease)
 		    (unsigned)(client -> interface -> hw_address.hlen - 1));
 
 #ifdef DEBUG_PACKET
-	dump_packet (sendpkt);
-	dump_raw ((unsigned char *)client -> packet,
-		  sendpkt->packet_length);
+	dump_raw ((unsigned char *)&client -> packet, client -> packet_length);
 #endif
 }
 
@@ -1937,8 +1939,7 @@ void make_request (client, lease)
 		    (unsigned)(client -> interface -> hw_address.hlen - 1));
 
 #ifdef DEBUG_PACKET
-	dump_packet (sendpkt);
-	dump_raw ((unsigned char *)client -> packet, sendpkt->packet_length);
+	dump_raw ((unsigned char *)&client -> packet, client -> packet_length);
 #endif
 }
 
@@ -1993,8 +1994,7 @@ void make_decline (client, lease)
 		client -> interface -> hw_address.hlen);
 
 #ifdef DEBUG_PACKET
-	dump_packet (sendpkt);
-	dump_raw ((unsigned char *)client -> packet, sendpkt->packet_length);
+	dump_raw ((unsigned char *)&client -> packet, client -> packet_length);
 #endif
 }
 
@@ -2046,9 +2046,7 @@ void make_release (client, lease)
 		client -> interface -> hw_address.hlen);
 
 #ifdef DEBUG_PACKET
-	dump_packet (sendpkt);
-	dump_raw ((unsigned char *)client -> packet,
-		  client -> packet_length);
+	dump_raw ((unsigned char *)&client -> packet, client -> packet_length);
 #endif
 }
 
