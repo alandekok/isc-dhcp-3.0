@@ -3,7 +3,7 @@
    Tables of information... */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: tables.c,v 1.51.2.11 2005/11/01 23:19:03 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: tables.c,v 1.51.2.14 2006/02/22 22:43:27 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -105,7 +105,7 @@ struct option dhcp_options [256] = {
 	{ "lpr-servers", "IA",				&dhcp_universe, 9 },
 	{ "impress-servers", "IA",			&dhcp_universe, 10 },
 	{ "resource-location-servers", "IA",		&dhcp_universe, 11 },
-	{ "host-name", "X",				&dhcp_universe, 12 },
+	{ "host-name", "t",				&dhcp_universe, 12 },
 	{ "boot-size", "S",				&dhcp_universe, 13 },
 	{ "merit-dump", "t",				&dhcp_universe, 14 },
 	{ "domain-name", "t",				&dhcp_universe, 15 },
@@ -155,7 +155,7 @@ struct option dhcp_options [256] = {
 	{ "dhcp-rebinding-time", "L",			&dhcp_universe, 59 },
 	{ "vendor-class-identifier", "X",		&dhcp_universe, 60 },
 	{ "dhcp-client-identifier", "X",		&dhcp_universe, 61 },
-	{ "nwip-domain", "X",				&dhcp_universe, 62 },
+	{ "nwip-domain", "t",				&dhcp_universe, 62 },
 	{ "nwip-suboptions", "Enwip.",			&dhcp_universe, 63 },
 	{ "nisplus-domain", "t",			&dhcp_universe, 64 },
 	{ "nisplus-servers", "IA",			&dhcp_universe, 65 },
@@ -179,8 +179,8 @@ struct option dhcp_options [256] = {
 	{ "unknown-83", "X",				&dhcp_universe, 83 },
 	{ "unknown-84", "X",				&dhcp_universe, 84 },
 	{ "nds-servers", "IA",				&dhcp_universe, 85 },
-	{ "nds-tree-name", "X",				&dhcp_universe, 86 },
-	{ "nds-context", "X",				&dhcp_universe, 87 },
+	{ "nds-tree-name", "t",				&dhcp_universe, 86 },
+	{ "nds-context", "t",				&dhcp_universe, 87 },
 	{ "unknown-88", "X",				&dhcp_universe, 88 },
 	{ "unknown-89", "X",				&dhcp_universe, 89 },
 	{ "unknown-90", "X",				&dhcp_universe, 90 },
@@ -211,7 +211,7 @@ struct option dhcp_options [256] = {
 	{ "unknown-115", "X",				&dhcp_universe, 115 },
 	{ "unknown-116", "X",				&dhcp_universe, 116 },
 	{ "unknown-117", "X",				&dhcp_universe, 117 },
-	{ "subnet-selection", "X",			&dhcp_universe, 118 },
+	{ "subnet-selection", "I",			&dhcp_universe, 118 },
 	{ "unknown-119", "X",				&dhcp_universe, 119 },
 	{ "unknown-120", "X",				&dhcp_universe, 120 },
 	{ "unknown-121", "X",				&dhcp_universe, 121 },
@@ -610,6 +610,15 @@ struct option nwip_options [256] = {
 	{ "unknown-254", "X",				&nwip_universe, 254 },
 	{ "unknown-end", "e",				&nwip_universe, 255 },
 };
+
+/* Note that the "FQDN suboption space" does not reflect the FQDN option
+ * format - rather, this is a handy "virtualization" of a flat option
+ * which makes manual configuration and presentation of some of its
+ * contents easier (each of these suboptions is a fixed-space field within
+ * the fqdn contents - domain and host names are derived from a common field,
+ * and differ in the left and right hand side of the leftmost dot, fqdn is
+ * the combination of the two).
+ */
 
 struct universe fqdn_universe;
 struct option fqdn_options [256] = {
@@ -1148,6 +1157,7 @@ void initialize_common_option_spaces()
 		     dmalloc (universe_max * sizeof (struct universe *), MDL));
 	if (!universes)
 		log_fatal ("Can't allocate option space table.");
+	memset (universes, 0, universe_max * sizeof (struct universe *));
 
 	/* Set up the DHCP option universe... */
 	dhcp_universe.name = "dhcp";

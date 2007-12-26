@@ -3,7 +3,7 @@
    DHCP Client. */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -32,7 +32,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.129.2.29 2005/10/10 16:45:38 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.129.2.31 2006/02/22 22:43:27 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1254,9 +1254,11 @@ struct client_lease *packet_to_lease (packet, client)
 			log_error ("dhcpoffer: no memory for server name.\n");
 			destroy_client_lease (lease);
 			return (struct client_lease *)0;
-		} else
+		} else {
 			memcpy (lease -> server_name,
 				packet -> raw -> sname, len);
+			lease -> server_name [len] = 0;
+		}
 	}
 
 	/* Ditto for the filename. */
@@ -1271,9 +1273,11 @@ struct client_lease *packet_to_lease (packet, client)
 			log_error ("dhcpoffer: no memory for filename.\n");
 			destroy_client_lease (lease);
 			return (struct client_lease *)0;
-		} else
+		} else {
 			memcpy (lease -> filename,
 				packet -> raw -> file, len);
+			lease -> filename [len] = 0;
+		}
 	}
 
 	execute_statements_in_scope ((struct binding_value **)0,
@@ -2578,6 +2582,7 @@ int script_go (client)
 	}
 	/* Set $PATH. */
 	envp [i++] = client_path;
+	envp [i] = (char *)0;
 
 	argv [0] = scriptName;
 	argv [1] = (char *)0;
