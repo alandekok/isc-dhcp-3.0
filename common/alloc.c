@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: alloc.c,v 1.30.2.1 1999/10/14 20:40:27 mellon Exp $ Copyright (c) 1995, 1996, 1998 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: alloc.c,v 1.30.2.5 1999/12/22 21:42:38 mellon Exp $ Copyright (c) 1995, 1996, 1998 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -30,16 +30,82 @@ static char copyright[] =
 struct dhcp_packet *dhcp_free_list;
 struct packet *packet_free_list;
 
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+struct dmalloc_preamble *dmalloc_list;
+unsigned long dmalloc_outstanding;
+unsigned long dmalloc_longterm;
+unsigned long dmalloc_generation;
+unsigned long dmalloc_cutoff_generation;
+#endif
+
+#if defined (DEBUG_RC_HISTORY)
+struct rc_history_entry rc_history [RC_HISTORY_MAX];
+int rc_history_index;
+#endif
+
 VOIDPTR dmalloc (size, name)
 	int size;
 	char *name;
 {
-	VOIDPTR foo = (VOIDPTR)malloc (size);
-	if (!foo)
+	unsigned char *foo = malloc (size + DMDSIZE);
+	int i;
+	VOIDPTR *bar;
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+	struct dmalloc_preamble *dp;
+#endif
+	if (!foo) {
 		log_error ("No memory for %s.", name);
-	else
-		memset (foo, 0, size);
-	return foo;
+		return (VOIDPTR)0;
+	}
+	bar = (VOIDPTR)(foo + DMDOFFSET);
+	memset (bar, 0, size);
+
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+	dp = (struct dmalloc_preamble *)foo;
+	dp -> prev = dmalloc_list;
+	if (dmalloc_list)
+		dmalloc_list -> next = dp;
+	dmalloc_list = dp;
+	dp -> next = (struct dmalloc_preamble *)0;
+	dp -> size = size;
+	dp -> name = name;
+	dp -> generation = dmalloc_generation++;
+	dmalloc_outstanding += size;
+	for (i = 0; i < DMLFSIZE; i++)
+		dp -> low_fence [i] =
+			(((unsigned long)
+			  (&dp -> low_fence [i])) % 143) + 113;
+	for (i = DMDOFFSET; i < DMDSIZE; i++)
+		foo [i + size] =
+			(((unsigned long)
+			  (&foo [i + size])) % 143) + 113;
+#if defined (DEBUG_MALLOC_POOL_EXHAUSTIVELY)
+	/* Check _every_ entry in the pool!   Very expensive. */
+	for (dp = dmalloc_list; dp; dp = dp -> prev) {
+		for (i = 0; i < DMLFSIZE; i++) {
+			if (dp -> low_fence [i] !=
+				(((unsigned long)
+				  (&dp -> low_fence [i])) % 143) + 113)
+			{
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+		foo = (unsigned char *)dp;
+		for (i = DMDOFFSET; i < DMDSIZE; i++) {
+			if (foo [i + dp -> size] !=
+				(((unsigned long)
+				  (&foo [i + dp -> size])) % 143) + 113) {
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+	}
+#endif
+#endif
+	return bar;
 }
 
 void dfree (ptr, name)
@@ -50,8 +116,179 @@ void dfree (ptr, name)
 		log_error ("dfree %s: free on null pointer.", name);
 		return;
 	}
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+	{
+		unsigned char *bar = ptr;
+		struct dmalloc_preamble *dp, *cur;
+		int i;
+		bar -= DMDOFFSET;
+		cur = (struct dmalloc_preamble *)bar;
+		for (dp = dmalloc_list; dp; dp = dp -> prev)
+			if (dp == cur)
+				break;
+		if (!dp) {
+			log_error ("freeing unaccounted-for memory: %lx",
+				   (unsigned long)cur);
+			abort ();
+		}
+		if (dp -> prev)
+			dp -> prev -> next = dp -> next;
+		if (dp -> next)
+			dp -> next -> prev = dp -> prev;
+		if (dp == dmalloc_list)
+			dmalloc_list = dp -> prev;
+		if (dp -> generation >= dmalloc_cutoff_generation)
+			dmalloc_outstanding -= dp -> size;
+		else
+			dmalloc_longterm -= dp -> size;
+
+		for (i = 0; i < DMLFSIZE; i++) {
+			if (dp -> low_fence [i] !=
+				(((unsigned long)
+				  (&dp -> low_fence [i])) % 143) + 113)
+			{
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+		for (i = DMDOFFSET; i < DMDSIZE; i++) {
+			if (bar [i + dp -> size] !=
+				(((unsigned long)
+				  (&bar [i + dp -> size])) % 143) + 113) {
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+		ptr = bar;
+	}
+#endif
 	free (ptr);
 }
+
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+/* For allocation functions that keep their own free lists, we want to
+   account for the reuse of the memory. */
+
+void dmalloc_reuse (foo, name, justref)
+	VOIDPTR foo;
+	char *name;
+	int justref;
+{
+	struct dmalloc_preamble *dp;
+
+	/* Get the pointer to the dmalloc header. */
+	dp = foo;
+	dp--;
+
+	/* If we just allocated this and are now referencing it, this
+	   function would almost be a no-op, except that it would
+	   increment the generation count needlessly.  So just return
+	   in this case. */
+	if (dp -> generation == dmalloc_generation)
+		return;
+
+	/* If this is longterm data, and we just made reference to it,
+	   don't put it on the short-term list or change its name -
+	   we don't need to know about this. */
+	if (dp -> generation < dmalloc_cutoff_generation && justref)
+		return;
+
+	/* Take it out of the place in the allocated list where it was. */
+	if (dp -> prev)
+		dp -> prev -> next = dp -> next;
+	if (dp -> next)
+		dp -> next -> prev = dp -> prev;
+	if (dp == dmalloc_list)
+		dmalloc_list = dp -> prev;
+
+	/* Account for its removal. */
+	if (dp -> generation >= dmalloc_cutoff_generation)
+		dmalloc_outstanding -= dp -> size;
+	else
+		dmalloc_longterm -= dp -> size;
+
+	/* Now put it at the head of the list. */
+	dp -> prev = dmalloc_list;
+	if (dmalloc_list)
+		dmalloc_list -> next = dp;
+	dmalloc_list = dp;
+	dp -> next = (struct dmalloc_preamble *)0;
+
+	/* Change the name associated with it. */
+	dp -> name = name;
+
+	/* Increment the generation. */
+	dp -> generation = dmalloc_generation++;
+
+	/* Account for it. */
+	dmalloc_outstanding += dp -> size;
+}
+
+void dmalloc_dump_outstanding ()
+{
+	static unsigned long dmalloc_cutoff_point;
+	struct dmalloc_preamble *dp;
+	unsigned char *foo;
+	int i;
+
+	if (!dmalloc_cutoff_point)
+		dmalloc_cutoff_point = dmalloc_cutoff_generation;
+	for (dp = dmalloc_list; dp; dp = dp -> prev) {
+		if (dp -> generation <= dmalloc_cutoff_point)
+			break;
+#if defined (DEBUG_MALLOC_POOL)
+		for (i = 0; i < DMLFSIZE; i++) {
+			if (dp -> low_fence [i] !=
+				(((unsigned long)
+				  (&dp -> low_fence [i])) % 143) + 113)
+			{
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+		foo = (unsigned char *)dp;
+		for (i = DMDOFFSET; i < DMDSIZE; i++) {
+			if (foo [i + dp -> size] !=
+				(((unsigned long)
+				  (&foo [i + dp -> size])) % 143) + 113) {
+				log_error ("malloc fence modified: %s",
+					   dp -> name);
+				abort ();
+			}
+		}
+#endif
+#if defined (DEBUG_MEMORY_LEAKAGE)
+		/* Don't count data that's actually on a free list
+                   somewhere. */
+		if (dp -> name)
+			log_info ("  %s: %d", dp -> name, dp -> size);
+#endif
+	}
+	if (dmalloc_list)
+		dmalloc_cutoff_point = dmalloc_list -> generation;
+}
+#endif /* DEBUG_MEMORY_LEAKAGE || DEBUG_MALLOC_POOL */
+
+#if defined (DEBUG_RC_HISTORY)
+void dump_rc_history ()
+{
+	int i;
+
+	i = rc_history_index;
+	do {
+		log_info ("   name = %s  addr = %lx  refcnt = %x\n",
+			  rc_history [i].name,
+			  (unsigned long)rc_history [i].addr,
+			  rc_history [i].refcnt);
+		++i;
+		if (i == RC_HISTORY_MAX)
+			i = 0;
+	} while (i != rc_history_index && rc_history [i].name);
+}
+#endif
 
 struct packet *new_packet (name)
 	char *name;
@@ -156,6 +393,7 @@ struct lease_state *new_lease_state (name)
 		rval = free_lease_states;
 		free_lease_states =
 			(struct lease_state *)(free_lease_states -> next);
+		dmalloc_reuse (rval, name, 0);
 	} else {
 		rval = dmalloc (sizeof (struct lease_state), name);
 		if (!rval)
@@ -236,14 +474,21 @@ void free_domain_search_list (ptr, name)
 	dfree ((VOIDPTR)ptr, name);
 }
 
-void free_lease_state (ptr, name)
-	struct lease_state *ptr;
+void free_lease_state (state, name)
+	struct lease_state *state;
 	char *name;
 {
-	if (ptr -> options)
-		option_state_dereference (&ptr -> options, name);
-	ptr -> next = free_lease_states;
-	free_lease_states = ptr;
+	if (state -> options)
+		option_state_dereference (&state -> options, name);
+	data_string_forget (&state -> parameter_request_list,
+			    "free_lease_state");
+	data_string_forget (&state -> filename,
+			    "free_lease_state");
+	data_string_forget (&state -> server_name,
+			    "free_lease_state");
+	state -> next = free_lease_states;
+	free_lease_states = state;
+	dmalloc_reuse (free_lease_states, (char *)0, 0);
 }
 
 void free_protocol (ptr, name)
@@ -419,6 +664,7 @@ pair new_pair (name)
 		foo = free_pairs;
 		free_pairs = foo -> cdr;
 		memset (foo, 0, sizeof *foo);
+		dmalloc_reuse (foo, name, 0);
 		return foo;
 	}
 
@@ -435,6 +681,7 @@ void free_pair (foo, name)
 {
 	foo -> cdr = free_pairs;
 	free_pairs = foo;
+	dmalloc_reuse (free_pairs, (char *)0, 0);
 }
 
 struct expression *free_expressions;
@@ -448,6 +695,7 @@ int expression_allocate (cptr, name)
 	if (free_expressions) {
 		rval = free_expressions;
 		free_expressions = rval -> data.not;
+		dmalloc_reuse (rval, name, 0);
 	} else {
 		rval = dmalloc (sizeof (struct expression), name);
 		if (!rval)
@@ -463,6 +711,7 @@ void free_expression (expr, name)
 {
 	expr -> data.not = free_expressions;
 	free_expressions = expr;
+	dmalloc_reuse (free_expressions, (char *)0, 0);
 }
 
 int expression_reference (ptr, src, name)
@@ -489,6 +738,8 @@ int expression_reference (ptr, src, name)
 	}
 	*ptr = src;
 	src -> refcnt++;
+	rc_register (name, src, src -> refcnt);
+	dmalloc_reuse (src, name, 1);
 	return 1;
 }
 
@@ -504,6 +755,7 @@ int option_cache_allocate (cptr, name)
 		rval = free_option_caches;
 		free_option_caches =
 			(struct option_cache *)(rval -> expression);
+		dmalloc_reuse (rval, name, 0);
 	} else {
 		rval = dmalloc (sizeof (struct option_cache), name);
 		if (!rval)
@@ -537,6 +789,8 @@ int option_cache_reference (ptr, src, name)
 	}
 	*ptr = src;
 	src -> refcnt++;
+	rc_register (name, src, src -> refcnt);
+	dmalloc_reuse (src, name, 1);
 	return 1;
 }
 
@@ -579,6 +833,8 @@ int buffer_reference (ptr, bp, name)
 	}
 	*ptr = bp;
 	bp -> refcnt++;
+	rc_register (name, bp, bp -> refcnt);
+	dmalloc_reuse (bp, name, 1);
 	return 1;
 }
 
@@ -608,8 +864,20 @@ int buffer_dereference (ptr, name)
 	}
 
 	(*ptr) -> refcnt--;
+	rc_register (name, *ptr, (*ptr) -> refcnt);
 	if (!(*ptr) -> refcnt)
 		dfree ((*ptr), name);
+	if ((*ptr) -> refcnt < 0) {
+		log_error ("buffer_dereference: negative refcnt!");
+#if defined (DEBUG_RC_HISTORY)
+		dump_rc_history ();
+#endif
+#if defined (POINTER_DEBUG)
+		abort ();
+#else
+		return 0;
+#endif
+	}
 	*ptr = (struct buffer *)0;
 	return 1;
 }
@@ -655,6 +923,8 @@ int dns_host_entry_reference (ptr, bp, name)
 	}
 	*ptr = bp;
 	bp -> refcnt++;
+	rc_register (name, bp, bp -> refcnt);
+	dmalloc_reuse (bp, name, 1);
 	return 1;
 }
 
@@ -675,8 +945,20 @@ int dns_host_entry_dereference (ptr, name)
 	}
 
 	(*ptr) -> refcnt--;
+	rc_register (name, bp, bp -> refcnt);
 	if (!(*ptr) -> refcnt)
 		dfree ((*ptr), name);
+	if ((*ptr) -> refcnt < 0) {
+		log_error ("dns_host_entry_dereference: negative refcnt!");
+#if defined (DEBUG_RC_HISTORY)
+		dump_rc_history ();
+#endif
+#if defined (POINTER_DEBUG)
+		abort ();
+#else
+		return 0;
+#endif
+	}
 	*ptr = (struct dns_host_entry *)0;
 	return 1;
 }
@@ -712,6 +994,7 @@ int option_state_allocate (ptr, name)
 		memset (*ptr, 0, size);
 		(*ptr) -> universe_count = universe_count;
 		(*ptr) -> refcnt = 1;
+		rc_register (name, *ptr, (*ptr) -> refcnt);
 		return 1;
 	}
 	return 0;
@@ -742,6 +1025,8 @@ int option_state_reference (ptr, bp, name)
 	}
 	*ptr = bp;
 	bp -> refcnt++;
+	rc_register (name, bp, bp -> refcnt);
+	dmalloc_reuse (bp, name, 1);
 	return 1;
 }
 
@@ -765,8 +1050,21 @@ int option_state_dereference (ptr, name)
 	options = *ptr;
 	*ptr = (struct option_state *)0;
 	--options -> refcnt;
-	if (options -> refcnt)
+	rc_register (name, options, options -> refcnt);
+	if (options -> refcnt > 0)
 		return 1;
+
+	if (options -> refcnt < 0) {
+		log_error ("option_state_dereference: negative refcnt!");
+#if defined (DEBUG_RC_HISTORY)
+		dump_rc_history ();
+#endif
+#if defined (POINTER_DEBUG)
+		abort ();
+#else
+		return 0;
+#endif
+	}
 
 	/* Loop through the per-universe state. */
 	for (i = 0; i < options -> universe_count; i++)
@@ -777,4 +1075,44 @@ int option_state_dereference (ptr, name)
 
 	dfree (options, name);
 	return 1;
+}
+
+/* Make a copy of the data in data_string, upping the buffer reference
+   count if there's a buffer. */
+
+void data_string_copy (dest, src, name)
+	struct data_string *dest;
+	struct data_string *src;
+	char *name;
+{
+	if (src -> buffer)
+		buffer_reference (&dest -> buffer, src -> buffer, name);
+	dest -> data = src -> data;
+	dest -> terminated = src -> terminated;
+	dest -> len = src -> len;
+}
+
+/* Release the reference count to a data string's buffer (if any) and
+   zero out the other information, yielding the null data string. */
+
+void data_string_forget (data, name)
+	struct data_string *data;
+	char *name;
+{
+	if (data -> buffer)
+		buffer_dereference (&data -> buffer, name);
+	memset (data, 0, sizeof *data);
+}
+
+/* Make a copy of the data in data_string, upping the buffer reference
+   count if there's a buffer. */
+
+void data_string_truncate (dp, len)
+	struct data_string *dp;
+	int len;
+{
+	if (len < dp -> len) {
+		dp -> terminated = 0;
+		dp -> len = len;
+	}
 }

@@ -708,6 +708,47 @@ struct dns_query {
 	int backoff;			/* Current backoff, in seconds. */
 };
 
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+#define DMDOFFSET (sizeof (struct dmalloc_preamble))
+#define DMLFSIZE 16
+#define DMUFSIZE 16
+#define DMDSIZE (DMDOFFSET + DMLFSIZE + DMUFSIZE)
+
+struct dmalloc_preamble {
+	struct dmalloc_preamble *prev, *next;
+	size_t size;
+	const char *name;
+	unsigned long generation;
+	unsigned long pad;
+	unsigned char low_fence [DMLFSIZE];
+};
+#else
+#define DMDOFFSET 0
+#define DMDSIZE 0
+#endif
+
+#if defined (DEBUG_RC_HISTORY)
+#if !defined (RC_HISTORY_MAX)
+# define RC_HISTORY_MAX 256
+#endif
+
+struct rc_history_entry {
+	char *name;
+	VOIDPTR addr;
+	int refcnt;
+};
+
+#define rc_register(x, y, z) do { \
+	rc_history [rc_history_index].name = (x); \
+	rc_history [rc_history_index].addr = (y); \
+	rc_history [rc_history_index].refcnt = (z); \
+	if (++rc_history_index == RC_HISTORY_MAX) \
+		rc_history_index = 0;\
+	} while (0)
+#else
+#define rc_register(name, addr, refcnt)
+#endif
+
 /* Bitmask of dhcp option codes. */
 typedef unsigned char option_mask [16];
 
@@ -963,7 +1004,8 @@ int evaluate_option_cache PROTO ((struct data_string *,
 				  struct packet *,
 				  struct option_state *,
 				  struct lease *,
-				  struct option_cache *));
+				  struct option_cache *,
+				  char *));
 int evaluate_boolean_option_cache PROTO ((struct packet *,
 					  struct option_state *,
 					  struct lease *,
@@ -973,10 +1015,6 @@ int evaluate_boolean_expression_result PROTO ((struct packet *,
 					       struct lease *,
 					       struct expression *));
 void expression_dereference PROTO ((struct expression **, char *));
-void data_string_copy PROTO ((struct data_string *,
-			      struct data_string *, char *));
-void data_string_forget PROTO ((struct data_string *, char *));
-void data_string_truncate PROTO ((struct data_string *, int));
 int is_boolean_expression PROTO ((struct expression *));
 int is_data_expression PROTO ((struct expression *));
 int is_numeric_expression PROTO ((struct expression *));
@@ -1042,8 +1080,29 @@ void write_leases PROTO ((void));
 void dump_subnets PROTO ((void));
 
 /* alloc.c */
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+extern struct dmalloc_preamble *dmalloc_list;
+extern unsigned long dmalloc_outstanding;
+extern unsigned long dmalloc_longterm;
+extern unsigned long dmalloc_generation;
+extern unsigned long dmalloc_cutoff_generation;
+#endif
+
+#if defined (DEBUG_RC_HISTORY)
+extern struct rc_history_entry rc_history [RC_HISTORY_MAX];
+extern int rc_history_index;
+#endif
 VOIDPTR dmalloc PROTO ((int, char *));
 void dfree PROTO ((VOIDPTR, char *));
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+void dmalloc_reuse PROTO ((VOIDPTR, char *, int));
+void dmalloc_dump_outstanding PROTO ((void));
+#else
+#define dmalloc_reuse(x,y,z)
+#endif
+#if defined (DEBUG_RC_HISTORY)
+void dump_rc_history PROTO ((void));
+#endif
 struct packet *new_packet PROTO ((char *));
 struct dhcp_packet *new_dhcp_packet PROTO ((char *));
 struct hash_table *new_hash_table PROTO ((int, char *));
@@ -1105,6 +1164,10 @@ int option_state_allocate PROTO ((struct option_state **, char *));
 int option_state_reference PROTO ((struct option_state **,
 				   struct option_state *, char *));
 int option_state_dereference PROTO ((struct option_state **, char *));
+void data_string_copy PROTO ((struct data_string *,
+			      struct data_string *, char *));
+void data_string_forget PROTO ((struct data_string *, char *));
+void data_string_truncate PROTO ((struct data_string *, int));
 
 /* print.c */
 char *print_hw_addr PROTO ((int, int, unsigned char *));
@@ -1316,6 +1379,8 @@ extern char *hardware_types [256];
 int universe_count, universe_max;
 struct universe **universes;
 extern struct hash_table universe_hash;
+extern struct universe *config_universe;
+
 void initialize_universes PROTO ((void));
 
 /* convert.c */

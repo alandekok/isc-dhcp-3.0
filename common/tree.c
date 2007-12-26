@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: tree.c,v 1.31.2.4 1999/11/03 19:50:15 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: tree.c,v 1.31.2.10 2000/02/02 17:02:58 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -538,6 +538,8 @@ int evaluate_boolean_expression (result, packet, options, lease, expr)
 	      case expr_encode_int32:
 	      case expr_binary_to_ascii:
 	      case expr_reverse:
+	      case expr_filename:
+	      case expr_sname:
 	      case expr_leased_address:
 		log_error ("Data opcode in evaluate_boolean_expression: %d",
 		      expr -> op);
@@ -610,9 +612,10 @@ int evaluate_data_expression (result, packet, options, lease, expr)
 		      (s3 ? print_hex_2 (result -> len, result -> data, 30)
 		          : "NULL"));
 #endif
+		if (s0)
+			data_string_forget (&data, "evaluate_data_expression");
 		if (s3)
 			return 1;
-		data_string_forget (&data, "evaluate_data_expression");
 		return 0;
 
 
@@ -1100,6 +1103,70 @@ int evaluate_data_expression (result, packet, options, lease, expr)
 		return 1;
 
 		
+		/* Extract the filename. */
+	      case expr_filename:
+		if (packet && packet -> raw -> file [0]) {
+			char *fn =
+				memchr (packet -> raw -> file, 0,
+					sizeof packet -> raw -> file);
+			if (!fn)
+				fn = ((char *)packet -> raw -> file +
+				      sizeof packet -> raw -> file);
+			result -> len = fn - &(packet -> raw -> file [0]);
+			if (buffer_allocate (&result -> buffer,
+					     result -> len + 1, "filename")) {
+				result -> data = &result -> buffer -> data [0];
+				memcpy (&result -> buffer -> data [0],
+					packet -> raw -> file,
+					result -> len);
+				result -> buffer -> data [result -> len] = 0;
+				result -> terminated = 1;
+				s0 = 1;
+			} else {
+				log_error ("data: filename: no memory.");
+				s0 = 0;
+			}
+		} else
+			s0 = 0;
+
+#if defined (DEBUG_EXPRESSIONS)
+		log_info ("data: filename = \"%s\"",
+			  s0 ? result -> data : "NULL");
+#endif
+		return s0;
+
+		/* Extract the server name. */
+	      case expr_sname:
+		if (packet && packet -> raw -> sname [0]) {
+			char *fn =
+				memchr (packet -> raw -> sname, 0,
+					sizeof packet -> raw -> sname);
+			if (!fn)
+				fn = ((char *)packet -> raw -> sname + 
+				      sizeof packet -> raw -> sname);
+			result -> len = fn - &packet -> raw -> sname [0];
+			if (buffer_allocate (&result -> buffer,
+					     result -> len + 1, "sname")) {
+				result -> data = &result -> buffer -> data [0];
+				memcpy (&result -> buffer -> data [0],
+					packet -> raw -> sname,
+					result -> len);
+				result -> buffer -> data [result -> len] = 0;
+				result -> terminated = 1;
+				s0 = 1;
+			} else {
+				log_error ("data: sname: no memory.");
+				s0 = 0;
+			}
+		} else
+			s0 = 0;
+
+#if defined (DEBUG_EXPRESSIONS)
+		log_info ("data: sname = \"%s\"",
+			  s0 ? result -> data : "NULL");
+#endif
+		return s0;
+
 
 	      case expr_check:
 	      case expr_equal:
@@ -1161,6 +1228,8 @@ int evaluate_numeric_expression (result, packet, options, lease, expr)
 	      case expr_encode_int32:
 	      case expr_binary_to_ascii:
 	      case expr_reverse:
+	      case expr_filename:
+	      case expr_sname:
 	      case expr_leased_address:
 		log_error ("Data opcode in evaluate_numeric_expression: %d",
 		      expr -> op);
@@ -1230,16 +1299,16 @@ int evaluate_numeric_expression (result, packet, options, lease, expr)
    result of that evaluation.   There should never be both an expression
    and a valid data_string. */
 
-int evaluate_option_cache (result, packet, options, lease, oc)
+int evaluate_option_cache (result, packet, options, lease, oc, name)
 	struct data_string *result;
 	struct packet *packet;
 	struct option_state *options;
 	struct lease *lease;
 	struct option_cache *oc;
+	char *name;
 {
 	if (oc -> data.len) {
-		data_string_copy (result,
-				  &oc -> data, "evaluate_option_cache");
+		data_string_copy (result, &oc -> data, name);
 		return 1;
 	}
 	if (!oc -> expression)
@@ -1265,7 +1334,8 @@ int evaluate_boolean_option_cache (packet, options, lease, oc)
 		return 0;
 	
 	memset (&ds, 0, sizeof ds);
-	if (!evaluate_option_cache (&ds, packet, options, lease, oc))
+	if (!evaluate_option_cache (&ds, packet, options, lease, oc,
+				    "evaluate_boolean_option_cache"))
 		return 0;
 
 	if (ds.len && ds.data [0])
@@ -1313,10 +1383,16 @@ void expression_dereference (eptr, name)
 
 	/* Decrement the reference count.   If it's nonzero, we're
 	   done. */
-	if (--(expr -> refcnt) > 0)
+	--expr -> refcnt;
+	rc_register (name, expr, expr -> refcnt);
+
+	if (expr -> refcnt > 0)
 		return;
 	if (expr -> refcnt < 0) {
 		log_error ("expression_dereference: negative refcnt!");
+#if defined (DEBUG_RC_HISTORY)
+		dump_rc_history ();
+#endif
 #if defined (POINTER_DEBUG)
 		abort ();
 #else
@@ -1423,6 +1499,8 @@ void expression_dereference (eptr, name)
 
 		/* No subexpressions. */
 	      case expr_leased_address:
+	      case expr_filename:
+	      case expr_sname:
 	      case expr_const_int:
 	      case expr_check:
 	      case expr_option:
@@ -1438,46 +1516,6 @@ void expression_dereference (eptr, name)
 	free_expression (expr, "expression_dereference");
 }
 
-/* Make a copy of the data in data_string, upping the buffer reference
-   count if there's a buffer. */
-
-void data_string_copy (dest, src, name)
-	struct data_string *dest;
-	struct data_string *src;
-	char *name;
-{
-	if (src -> buffer)
-		buffer_reference (&dest -> buffer, src -> buffer, name);
-	dest -> data = src -> data;
-	dest -> terminated = src -> terminated;
-	dest -> len = src -> len;
-}
-
-/* Release the reference count to a data string's buffer (if any) and
-   zero out the other information, yielding the null data string. */
-
-void data_string_forget (data, name)
-	struct data_string *data;
-	char *name;
-{
-	if (data -> buffer)
-		buffer_dereference (&data -> buffer, name);
-	memset (data, 0, sizeof *data);
-}
-
-/* Make a copy of the data in data_string, upping the buffer reference
-   count if there's a buffer. */
-
-void data_string_truncate (dp, len)
-	struct data_string *dp;
-	int len;
-{
-	if (len < dp -> len) {
-		dp -> terminated = 0;
-		dp -> len = len;
-	}
-}
-
 int is_boolean_expression (expr)
 	struct expression *expr;
 {
@@ -1486,7 +1524,8 @@ int is_boolean_expression (expr)
 		expr -> op == expr_equal ||
 		expr -> op == expr_and ||
 		expr -> op == expr_or ||
-		expr -> op == expr_not);
+		expr -> op == expr_not ||
+		expr -> op == expr_known);
 }
 
 int is_data_expression (expr)
@@ -1506,6 +1545,8 @@ int is_data_expression (expr)
 		expr -> op == expr_host_lookup ||
 		expr -> op == expr_binary_to_ascii ||
 		expr -> op == expr_reverse ||
+		expr -> op == expr_filename ||
+		expr -> op == expr_sname ||
 		expr -> op == expr_leased_address);
 }
 
@@ -1548,6 +1589,8 @@ static int op_val (op)
 	      case expr_known:
 	      case expr_binary_to_ascii:
 	      case expr_reverse:
+	      case expr_filename:
+	      case expr_sname:
 	      case expr_leased_address:
 		return 100;
 
@@ -1600,6 +1643,8 @@ enum expression_context op_context (op)
 	      case expr_known:
 	      case expr_binary_to_ascii:
 	      case expr_reverse:
+	      case expr_filename:
+	      case expr_sname:
 	      case expr_leased_address:
 		return context_any;
 

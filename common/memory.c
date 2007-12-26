@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: memory.c,v 1.52.2.6 1999/11/03 22:23:23 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: memory.c,v 1.52.2.12 1999/12/22 20:30:20 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -88,7 +88,8 @@ void enter_host (hd)
 				 (struct packet *)0,
 				 (struct option_state *)0,
 				 (struct lease *)0,
-				 esp -> data.option);
+				 esp -> data.option,
+				 "enter_host: DCI");
 			break;
 		}
 	}
@@ -508,7 +509,7 @@ int supersede_lease (comp, lease, commit)
 		uid_hash_delete (comp);
 		enter_uid = 1;
 		if (comp -> uid != &comp -> uid_buf [0]) {
-			free (comp -> uid);
+			dfree (comp -> uid, "supersede_lease");
 			comp -> uid_max = 0;
 			comp -> uid_len = 0;
 		}
@@ -537,24 +538,33 @@ int supersede_lease (comp, lease, commit)
 	/* Copy the data files, but not the linkages. */
 	comp -> starts = lease -> starts;
 	if (lease -> uid) {
-		if (lease -> uid_len < sizeof (lease -> uid_buf)) {
+		if (lease -> uid_len <= sizeof (lease -> uid_buf)) {
 			memcpy (comp -> uid_buf,
 				lease -> uid, lease -> uid_len);
 			comp -> uid = &comp -> uid_buf [0];
 			comp -> uid_max = sizeof comp -> uid_buf;
+			comp -> uid_len = lease -> uid_len;
 		} else if (lease -> uid != &lease -> uid_buf [0]) {
 			comp -> uid = lease -> uid;
 			comp -> uid_max = lease -> uid_max;
+			comp -> uid_len = lease -> uid_len;
 			lease -> uid = (unsigned char *)0;
 			lease -> uid_max = 0;
+			lease -> uid_len = 0;
 		} else {
+			/* The theory here is that we have a memory
+			   corruption problem, so continuing to run
+			   would be incorrect.  However, what has
+			   probably happened is a relatively harmless
+			   coding error, so maybe this is an extreme
+			   reaction. */
 			log_fatal ("corrupt lease uid."); /* XXX */
 		}
 	} else {
 		comp -> uid = (unsigned char *)0;
 		comp -> uid_max = 0;
+		comp -> uid_len = 0;
 	}
-	comp -> uid_len = lease -> uid_len;
 	comp -> host = lease -> host;
 	comp -> hardware_addr = lease -> hardware_addr;
 	comp -> flags = ((lease -> flags & ~PERSISTENT_FLAGS) |
@@ -582,6 +592,25 @@ int supersede_lease (comp, lease, commit)
 	}
 	if (comp -> pool -> last_lease == comp) {
 		comp -> pool -> last_lease = comp -> prev;
+	}
+	
+	/* If there's an expiry event on this lease, get rid of it
+	   (we may wind up putting it back, but we can't count on
+	   that here without too much additional complexity). */
+	if (comp -> pool -> next_expiry == comp) {
+		for (lp = comp -> prev; lp; lp = lp -> prev)
+			if (lp -> ddns_fwd_name)
+				break;
+		if (lp && lp -> ddns_fwd_name) {
+			comp -> pool -> next_expiry = lp;
+			if (commit)
+				add_timeout (lp -> ends,
+					     pool_timer, lp -> pool);
+		} else {
+			comp -> pool -> next_expiry = (struct lease *)0;
+			if (commit)
+				cancel_timeout (pool_timer, comp -> pool);
+		}
 	}
 	
 	/* Find the last insertion point... */
@@ -675,6 +704,23 @@ int supersede_lease (comp, lease, commit)
 					    add_timeout (comp -> ends,
 							 pool_timer,
 							 comp -> pool);
+			    } else if (comp -> ends ==
+				       comp -> pool -> next_expiry -> ends) {
+				    /* If there are other leases that expire at
+                                       the same time as comp, we need to make
+                                       sure that we have the one that appears
+                                       last on the list that needs an expiry
+                                       event - otherwise we'll miss expiry
+                                       events until the server restarts. */
+				    struct lease *foo;
+				    struct lease *install = comp;
+				    for (foo = comp;
+					 foo -> ends == comp -> ends;
+					 foo = foo -> next) {
+					    if (foo -> ddns_fwd_name)
+						    install = foo;
+				    }
+				    comp -> pool -> next_expiry = install;
 			    }
 			}
 		}

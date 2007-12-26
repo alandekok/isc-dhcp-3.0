@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: confpars.c,v 1.73.2.3 1999/11/03 19:50:18 mellon Exp $ Copyright (c) 1995, 1996 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: confpars.c,v 1.73.2.7 2000/02/02 17:01:19 mellon Exp $ Copyright (c) 1995, 1996 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -45,6 +45,7 @@ int readconf ()
 
 	/* Set up the initial dhcp option universe. */
 	initialize_universes ();
+	config_universe = &server_universe;
 
 	root_group.authoritative = 0;
 
@@ -252,7 +253,8 @@ int parse_statement (cfile, group, type, host_decl, declaration)
 
 			/* Make the shared network name from network number. */
 			n = piaddr (share -> subnets -> net);
-			t = malloc (strlen (n) + 1);
+			t = dmalloc (strlen (n) + 1,
+				     "parse_statement");
 			if (!t)
 				log_fatal ("no memory for subnet name");
 			strcpy (t, n);
@@ -387,7 +389,6 @@ int parse_statement (cfile, group, type, host_decl, declaration)
 				parse_warn ("option space definitions %s",
 					    "may not be scoped.");
 				skip_to_semi (cfile);
-				free_option (option, "parse_statement");
 				break;
 			}
 			parse_option_space_decl (cfile);
@@ -445,40 +446,17 @@ int parse_statement (cfile, group, type, host_decl, declaration)
 
 	      default:
 		et = (struct executable_statement *)0;
-		if (is_identifier (token)) {
-			option = ((struct option *)
-				  hash_lookup (server_universe.hash,
-					       (unsigned char *)val, 0));
-			if (option) {
-				token = next_token (&val, cfile);
-				et = parse_option_statement
-					(cfile, 1, option,
-					 supersede_option_statement);
-				if (!et)
-					return declaration;
-			}
-		}
-
+		lose = 0;
+		et = parse_executable_statement (cfile, &lose);
 		if (!et) {
-			lose = 0;
-			et = parse_executable_statement (cfile, &lose);
-			if (!et) {
-				if (!lose) {
-					if (declaration)
-						parse_warn ("expecting a %s.",
-							    "declaration");
-					else
-						parse_warn ("expecting a%s%s.",
-							    " parameter",
-							    " or declaration");
-					skip_to_semi (cfile);
-				}
-				return declaration;
+			if (!lose) {
+				if (declaration)
+					parse_warn ("expecting a declaration");
+				else
+					parse_warn ("expecting a parameter %s",
+						    "or declaration.");
+				skip_to_semi (cfile);
 			}
-		}
-		if (!et) {
-			parse_warn ("expecting a %sdeclaration",
-				    declaration ? "" :  "parameter or ");
 			return declaration;
 		}
 	      insert_statement:
@@ -1230,7 +1208,8 @@ void parse_shared_net_declaration (cfile, group)
 			parse_warn ("zero-length shared network name");
 			val = "<no-name-given>";
 		}
-		name = malloc (strlen (val) + 1);
+		name = dmalloc (strlen (val) + 1,
+				"parse_shared_net_declaration");
 		if (!name)
 			log_fatal ("no memory for shared network name");
 		strcpy (name, val);
@@ -1540,7 +1519,8 @@ struct lease *parse_lease_declaration (cfile)
 					token = next_token (&val, cfile);
 					lease.uid_len = strlen (val) + 1;
 					lease.uid = (unsigned char *)
-						malloc (lease.uid_len);
+					   dmalloc (lease.uid_len,
+						    "parse_lease_declaration");
 					if (!lease.uid) {
 						log_error ("no space for uid");
 						return (struct lease *)0;
@@ -1770,17 +1750,18 @@ void parse_address_range (cfile, group, type, pool)
 		struct pool *last;
 		/* If we're permitting dynamic bootp for this range,
 		   then look for a pool with an empty prohibit list and
-		   a permit list with one entry which permits dynamic
-		   bootp. */
+		   a permit list with one entry that permits all clients */
 		for (pool = share -> pools; pool; pool = pool -> next) {
-			if ((!dynamic &&
-			     !pool -> permit_list && !pool -> prohibit_list) ||
-			    (dynamic &&
-			     !pool -> prohibit_list &&
+			if ((!dynamic && !pool -> permit_list && 
+			     pool -> prohibit_list &&
+			     !pool -> prohibit_list -> next &&
+			     (pool -> prohibit_list -> type ==
+			      permit_dynamic_bootp_clients)) ||
+			    (dynamic && !pool -> prohibit_list &&
 			     pool -> permit_list &&
 			     !pool -> permit_list -> next &&
 			     (pool -> permit_list -> type ==
-			      permit_dynamic_bootp_clients))) {
+			      permit_all_clients))) {
 				break;
 			}
 			last = pool;
@@ -1788,18 +1769,23 @@ void parse_address_range (cfile, group, type, pool)
 
 		/* If we didn't get a pool, make one. */
 		if (!pool) {
+			struct permit *p;
 			pool = new_pool ("parse_address_range");
 			if (!pool)
 				log_fatal ("no memory for ad-hoc pool.");
+			p = new_permit ("parse_address_range");
+			if (!p)
+				log_fatal ("no memory for ad-hoc permit.");
+			/* Dynamic pools permit all clients.   Otherwise
+			   we prohibit BOOTP clients. */
 			if (dynamic) {
-				pool -> permit_list =
-					new_permit ("parse_address_range");
-				if (!pool -> permit_list)
-					log_fatal ("no memory for ad-hoc %s.",
-						   "permit");
-				pool -> permit_list -> type =
-					permit_dynamic_bootp_clients;
+				p -> type = permit_all_clients;
+				pool -> permit_list = p;
+			} else {
+				p -> type = permit_dynamic_bootp_clients;
+				pool -> prohibit_list = p;
 			}
+
 			if (share -> pools)
 				last -> next = pool;
 			else

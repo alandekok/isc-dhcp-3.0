@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: options.c,v 1.44.2.1 1999/10/14 21:33:36 mellon Exp $ Copyright (c) 1995, 1996 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: options.c,v 1.44.2.6 1999/12/22 21:43:18 mellon Exp $ Copyright (c) 1995, 1996 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #define DHCP_OPTION_DATA
@@ -268,7 +268,8 @@ int cons_options (inpacket, outpacket, lease,
 	    (op = lookup_option (&dhcp_universe, inpacket -> options,
 				 DHO_DHCP_MAX_MESSAGE_SIZE))) {
 		evaluate_option_cache (&ds, inpacket,
-				       inpacket -> options, lease, op);
+				       inpacket -> options, lease, op,
+				       "cons_options: MMS");
 		if (ds.len >= sizeof (u_int16_t))
 			mms = getUShort (ds.data);
 		data_string_forget (&ds, "cons_options");
@@ -538,7 +539,7 @@ int store_options (buffer, buflen, lease, options, priority_list, priority_len,
 
 		/* Find the value of the option... */
 		evaluate_option_cache (&od, (struct packet *)0,
-				       options, lease, oc);
+				       options, lease, oc, "store_options");
 		if (!od.len) {
 			continue;
 		}
@@ -655,7 +656,10 @@ char *pretty_print_option (code, data, len, emit_commas, emit_quotes)
 				    !isprint (data [k]))
 					break;
 			}
-			if (k == len) {
+			/* If we found no bogus characters, or the bogus
+			   character we found is a trailing NUL, it's
+			   okay to print this option as text. */
+			if (k == len || (k + 1 == len && data [k] == 0)) {
 				fmtbuf [i] = 't';
 				numhunk = -2;
 			} else {
@@ -795,6 +799,9 @@ void do_packet (interface, packet, len, from_port, from, hfrom)
 	struct packet tp;
 	int i;
 	struct option_cache *op;
+#if defined (DEBUG_MEMORY_LEAKAGE)
+	unsigned long previous_outstanding = dmalloc_outstanding;
+#endif
 
 	memset (&tp, 0, sizeof tp);
 	tp.raw = packet;
@@ -823,7 +830,8 @@ void do_packet (interface, packet, len, from_port, from, hfrom)
 			struct data_string dp;
 			memset (&dp, 0, sizeof dp);
 			evaluate_option_cache (&dp, &tp, tp.options,
-					       (struct lease *)0, op);
+					       (struct lease *)0, op,
+					       "do_packet: DMT");
 			if (dp.len > 0)
 				tp.packet_type = dp.data [0];
 			else
@@ -838,6 +846,15 @@ void do_packet (interface, packet, len, from_port, from, hfrom)
 		bootp (&tp);
 
 	option_state_dereference (&tp.options, "do_packet");
+#if defined (DEBUG_MEMORY_LEAKAGE)
+	log_info ("generation %ld: %ld new, %ld outstanding, %ld long-term",
+		  dmalloc_generation,
+		  dmalloc_outstanding - previous_outstanding,
+		  dmalloc_outstanding, dmalloc_longterm);
+#endif
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+	dmalloc_dump_outstanding ();
+#endif
 }
 
 int hashed_option_get (result, universe, packet, lease, options, code)
@@ -856,7 +873,7 @@ int hashed_option_get (result, universe, packet, lease, options, code)
 	if (!oc)
 		return 0;
 	if (!evaluate_option_cache (result, packet,
-				    options, lease, oc))
+				    options, lease, oc, "hashed_option_get"))
 		return 0;
 	return 1;
 }
@@ -1157,6 +1174,7 @@ int option_cache_dereference (ptr, name)
 	}
 
 	(*ptr) -> refcnt--;
+	rc_register (name, *ptr, (*ptr) -> refcnt);
 	if (!(*ptr) -> refcnt) {
 		if ((*ptr) -> data.buffer)
 			data_string_forget (&(*ptr) -> data, name);
@@ -1165,6 +1183,18 @@ int option_cache_dereference (ptr, name)
 		/* Put it back on the free list... */
 		(*ptr) -> expression = (struct expression *)free_option_caches;
 		free_option_caches = *ptr;
+		dmalloc_reuse (free_option_caches, (char *)0, 0);
+	}
+	if ((*ptr) -> refcnt < 0) {
+		log_error ("option_cache_dereference: negative refcnt!");
+#if defined (DEBUG_RC_HISTORY)
+		dump_rc_history ();
+#endif
+#if defined (POINTER_DEBUG)
+		abort ();
+#else
+		return 0;
+#endif
 	}
 	*ptr = (struct option_cache *)0;
 	return 1;
@@ -1218,7 +1248,7 @@ int agent_option_state_dereference (universe, state)
 		na = a -> next;
 		for (ot = a -> first; ot; ot = not) {
 			not = ot -> next;
-			free (ot);
+			dfree (ot, "agent_option_state_dereference");
 		}
 	}
 
@@ -1240,7 +1270,8 @@ int store_option (result, universe, lease, oc)
 	memset (&d2, 0, sizeof d2);
 
 	if (evaluate_option_cache (&d2, (struct packet *)0,
-				   (struct option_state *)0, lease, oc)) {
+				   (struct option_state *)0, lease, oc,
+				   "store_option")) {
 		if (!buffer_allocate (&d1.buffer,
 				      (result -> len +
 				       universe -> length_size +
