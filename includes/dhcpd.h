@@ -377,6 +377,12 @@ struct lease_state {
 #define SV_LOCAL_ADDRESS		35
 #define SV_OMAPI_KEY			36
 #define SV_STASH_AGENT_OPTIONS		37
+#define SV_DDNS_TTL			38
+#define SV_DDNS_UPDATE_STYLE		39
+#define SV_CLIENT_UPDATES		40
+#define SV_UPDATE_OPTIMIZATION		41
+#define SV_PING_CHECKS			42
+#define SV_UPDATE_STATIC_LEASES		43
 
 #if !defined (DEFAULT_DEFAULT_LEASE_TIME)
 # define DEFAULT_DEFAULT_LEASE_TIME 43200
@@ -388,6 +394,10 @@ struct lease_state {
 
 #if !defined (DEFAULT_MAX_LEASE_TIME)
 # define DEFAULT_MAX_LEASE_TIME 86400
+#endif
+
+#if !defined (DEFAULT_DDNS_TTL)
+# define DEFAULT_DDNS_TTL 3600
 #endif
 
 /* Client option names */
@@ -1044,6 +1054,8 @@ void do_packet PROTO ((struct interface_info *,
 /* dhcpd.c */
 extern TIME cur_time;
 
+int ddns_update_style;
+
 extern const char *path_dhcpd_conf;
 extern const char *path_dhcpd_db;
 extern const char *path_dhcpd_pid;
@@ -1092,7 +1104,16 @@ int parse_lease_declaration PROTO ((struct lease **, struct parse *));
 void parse_address_range PROTO ((struct parse *,
 				 struct group *, int, struct pool *));
 
+/* ddns.c */
+int ddns_updates PROTO ((struct packet *, struct lease *, struct lease *,
+			 struct lease_state *));
+int ddns_removals PROTO ((struct lease *));
+
 /* parse.c */
+void add_enumeration (struct enumeration *);
+struct enumeration *find_enumeration (const char *, int);
+struct enumeration_value *find_enumeration_value (const char *, int,
+						  const char *);
 void skip_to_semi PROTO ((struct parse *));
 void skip_to_rbrace PROTO ((struct parse *, int));
 int parse_semi PROTO ((struct parse *));
@@ -1146,13 +1167,18 @@ int parse_option_statement PROTO ((struct executable_statement **,
 				   struct parse *, int,
 				   struct option *, enum statement_op));
 int parse_option_token PROTO ((struct expression **, struct parse *,
-			       const char *, struct expression *, int, int));
+			       const char **, struct expression *, int, int));
 int parse_allow_deny PROTO ((struct option_cache **, struct parse *, int));
 int parse_auth_key PROTO ((struct data_string *, struct parse *));
 int parse_warn (struct parse *, const char *, ...)
 	__attribute__((__format__(__printf__,2,3)));
 
 /* tree.c */
+#if defined (NSUPDATE)
+extern struct __res_state resolver_state;
+extern int resolver_inited;
+#endif
+
 extern struct binding_scope *global_scope;
 pair cons PROTO ((caddr_t, pair));
 int make_const_option_cache PROTO ((struct option_cache **, struct buffer **,
@@ -1234,6 +1260,7 @@ int is_data_expression PROTO ((struct expression *));
 int is_numeric_expression PROTO ((struct expression *));
 int is_compound_expression PROTO ((struct expression *));
 int op_precedence PROTO ((enum expr_op, enum expr_op));
+enum expression_context expression_context (struct expression *);
 enum expression_context op_context PROTO ((enum expr_op));
 int write_expression PROTO ((FILE *, struct expression *, int, int, int));
 struct binding *find_binding PROTO ((struct binding_scope *, const char *));
@@ -1243,6 +1270,12 @@ int binding_scope_dereference PROTO ((struct binding_scope **,
 int fundef_dereference (struct fundef **, const char *, int);
 int data_subexpression_length (int *, struct expression *);
 int expr_valid_for_context (struct expression *, enum expression_context);
+struct binding *create_binding (struct binding_scope **, const char *);
+int bind_ds_value (struct binding_scope **,
+		   const char *, struct data_string *);
+int find_bound_string (struct data_string *,
+		       struct binding_scope *, const char *);
+int unset (struct binding_scope *, const char *);
 
 /* dhcp.c */
 extern int outstanding_pings;
@@ -1581,6 +1614,7 @@ extern struct interface_info *interfaces,
 	*dummy_interfaces, *fallback_interface;
 extern struct protocol *protocols;
 extern int quiet_interface_discovery;
+isc_result_t interface_setup (void);
 
 extern struct in_addr limited_broadcast;
 extern struct in_addr local_address;
@@ -1660,6 +1694,8 @@ extern struct universe agent_universe;
 extern struct option agent_options [256];
 extern struct universe server_universe;
 extern struct option server_options [256];
+
+extern struct enumeration ddns_styles;
 void initialize_server_option_spaces PROTO ((void));
 
 /* inet.c */
@@ -1870,12 +1906,13 @@ isc_result_t enter_dns_zone (struct dns_zone *);
 isc_result_t dns_zone_lookup (struct dns_zone **, const char *);
 int dns_zone_dereference PROTO ((struct dns_zone **, const char *, int));
 #if defined (NSUPDATE)
-ns_rcode find_cached_zone (const char *, ns_class, char *,
-			   size_t, struct in_addr *, int, int *,
-			   struct dns_zone **);
+isc_result_t find_cached_zone (const char *, ns_class, char *,
+			       size_t, struct in_addr *, int, int *,
+			       struct dns_zone **);
 void forget_zone (struct dns_zone **);
 void repudiate_zone (struct dns_zone **);
 void cache_found_zone (ns_class, char *, struct in_addr *, int);
+int get_dhcid (struct data_string *, struct lease *);
 #endif /* NSUPDATE */
 HASH_FUNCTIONS_DECL (dns_zone, const char *, struct dns_zone)
 

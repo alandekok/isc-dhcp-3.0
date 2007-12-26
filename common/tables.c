@@ -3,7 +3,7 @@
    Tables of information... */
 
 /*
- * Copyright (c) 1995-2000 Internet Software Consortium.
+ * Copyright (c) 1995-2001 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: tables.c,v 1.46 2000/10/10 22:48:20 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: tables.c,v 1.50 2001/01/08 17:21:38 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -58,7 +58,6 @@ HASH_FUNCTIONS (option, const char *, struct option)
 
    Format codes:
 
-   e - end of data
    I - IP address
    l - 32-bit signed integer
    L - 32-bit unsigned integer
@@ -85,6 +84,15 @@ HASH_FUNCTIONS (option, const char *, struct option)
        This is done by placing a 'e' at the beginning of the option.   The
        'e' has no other purpose, and is not required if 'E' is the first
        thing in the option.
+   X - either an ASCII string or binary data.   On output, the string is
+       scanned to see if it's printable ASCII and, if so, output as a
+       quoted string.   If not, it's output as colon-seperated hex.   On
+       input, the option can be specified either as a quoted string or as
+       a colon-seperated hex list.
+   N - enumeration.   N is followed by a text string containing
+       the name of the set of enumeration values to parse or emit,
+       followed by a '.'.   The width of the data is specified in the
+       named enumeration.   Named enumerations are tracked in parse.c.
 */
 
 struct universe dhcp_universe;
@@ -207,7 +215,7 @@ struct option dhcp_options [256] = {
 	{ "option-115", "X",				&dhcp_universe, 115 },
 	{ "option-116", "X",				&dhcp_universe, 116 },
 	{ "option-117", "X",				&dhcp_universe, 117 },
-	{ "option-118", "X",				&dhcp_universe, 118 },
+	{ "subnet-selection", "X",			&dhcp_universe, 118 },
 	{ "option-119", "X",				&dhcp_universe, 119 },
 	{ "option-120", "X",				&dhcp_universe, 120 },
 	{ "option-121", "X",				&dhcp_universe, 121 },
@@ -300,7 +308,7 @@ struct option dhcp_options [256] = {
 	{ "option-208", "X",				&dhcp_universe, 208 },
 	{ "option-209", "X",				&dhcp_universe, 209 },
 	{ "authenticate", "X",				&dhcp_universe, 210 },
-	{ "subnet-selection-xx", "X",			&dhcp_universe, 211 },
+	{ "option-211", "X",				&dhcp_universe, 211 },
 	{ "option-212", "X",				&dhcp_universe, 212 },
 	{ "option-213", "X",				&dhcp_universe, 213 },
 	{ "option-214", "X",				&dhcp_universe, 214 },
@@ -615,9 +623,9 @@ struct option fqdn_options [256] = {
 	{ "encoded", "f",				&fqdn_universe, 3 },
 	{ "rcode1", "B",				&fqdn_universe, 4 },
 	{ "rcode2", "B",				&fqdn_universe, 5 },
-	{ "name", "t",					&fqdn_universe, 6 },
-	{ "option-7", "X",				&fqdn_universe, 7 },
-	{ "option-8", "X",				&fqdn_universe, 8 },
+	{ "hostname", "t",				&fqdn_universe, 6 },
+	{ "domainname", "t",				&fqdn_universe, 7 },
+	{ "fqdn", "t",					&fqdn_universe, 8 },
 	{ "option-9", "X",				&fqdn_universe, 9 },
 	{ "option-10", "X",				&fqdn_universe, 10 },
 	{ "option-11", "X",				&fqdn_universe, 11 },

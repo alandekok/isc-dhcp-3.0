@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: tree.c,v 1.92 2000/11/28 23:23:13 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: tree.c,v 1.96 2001/01/16 23:15:38 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -53,6 +53,11 @@ struct binding_scope *global_scope;
 
 static int do_host_lookup PROTO ((struct data_string *,
 				  struct dns_host_entry *));
+
+#ifdef NSUPDATE
+struct __res_state resolver_state;
+int resolver_inited = 0;
+#endif
 
 pair cons (car, cdr)
 	caddr_t car;
@@ -620,8 +625,10 @@ int binding_value_dereference (struct binding_value **v,
 #if defined (NSUPDATE)
 		if (bv -> value.dns) {
 			if (bv -> value.dns -> r_data) {
-				dfree (bv -> value.dns -> r_data, MDL);
+				dfree (bv -> value.dns -> r_data_ephem, MDL);
 				bv -> value.dns -> r_data = (unsigned char *)0;
+				bv -> value.dns -> r_data_ephem =
+					(unsigned char *)0;
 			}
 			minires_freeupdrec (bv -> value.dns);
 		}
@@ -732,27 +739,32 @@ int evaluate_dns_expression (result, packet, lease, client_state, in_options,
 				   it.   This should be fixed when the new
 				   resolver is merged. */
 				if (data.len == 4) {
-				    (*result) -> r_data = dmalloc (16, MDL);
-				    if (!(*result) -> r_data)
+				    (*result) -> r_data_ephem =
+					    dmalloc (16, MDL);
+				    if (!(*result) -> r_data_ephem)
 					goto dpngood;
-				    sprintf ((char *)(*result) -> r_data,
+				    (*result) -> r_data =
+					    (*result) -> r_data_ephem;
+				    sprintf ((char *)(*result) -> r_data_ephem,
 					     "%d.%d.%d.%d",
 					     data.data [0], data.data [1],
 					     data.data [2], data.data [3]);
 				    (*result) -> r_size = 
-					    strlen ((char *)
+					    strlen ((const char *)
 						    (*result) -> r_data);
 				} else {
 				    (*result) -> r_size = data.len;
-				    (*result) -> r_data = dmalloc (data.len,
-								   MDL);
-				    if (!(*result) -> r_data) {
+				    (*result) -> r_data_ephem =
+					    dmalloc (data.len, MDL);
+				    if (!(*result) -> r_data_ephem) {
 				      dpngood: /* double plus ungood. */
 					minires_freeupdrec (*result);
 					*result = 0;
 					goto ngood;
 				    }
-				    memcpy ((*result) -> r_data,
+				    (*result) -> r_data =
+					    (*result) -> r_data_ephem;
+				    memcpy ((*result) -> r_data_ephem,
 					    data.data, data.len);
 				}
 			} else {
@@ -903,7 +915,7 @@ int evaluate_boolean_expression (result, packet, lease, client_state,
 	int bleft, bright;
 	int sleft, sright;
 	struct binding *binding;
-	struct binding_value *bv;
+	struct binding_value *bv, *obv;
 
 	switch (expr -> op) {
 	      case expr_check:
@@ -911,50 +923,85 @@ int evaluate_boolean_expression (result, packet, lease, client_state,
 					    expr -> data.check);
 #if defined (DEBUG_EXPRESSIONS)
 		log_debug ("bool: check (%s) returns %s",
-		      expr -> data.check -> name, *result ? "true" : "false");
+			   expr -> data.check -> name,
+			   *result ? "true" : "false");
 #endif
 		return 1;
 
 	      case expr_equal:
 	      case expr_not_equal:
-		memset (&left, 0, sizeof left);
-		sleft = evaluate_data_expression (&left, packet, lease,
-						  client_state,
-						  in_options, cfg_options,
-						  scope,
-						  expr -> data.equal [0]);
-		memset (&right, 0, sizeof right);
-		sright = evaluate_data_expression (&right, packet, lease,
-						   client_state,
-						   in_options, cfg_options,
-						   scope,
-						   expr -> data.equal [1]);
+		bv = obv = (struct binding_value *)0;
+		sleft = evaluate_expression (&bv, packet, lease, client_state,
+					     in_options, cfg_options, scope,
+					     expr -> data.equal [0]);
+		sright = evaluate_expression (&obv, packet, lease,
+					      client_state, in_options,
+					      cfg_options, scope,
+					      expr -> data.equal [1]);
 		if (sleft && sright) {
-			if (left.len == right.len &&
-			    !memcmp (left.data, right.data, left.len))
-				*result = expr -> op == expr_equal;
-			else
-				*result = expr -> op == expr_not_equal;
-		} else if (!sleft && !sright)
-			*result = expr -> op == expr_equal;
-		else
+		    if (bv -> type != obv -> type)
 			*result = expr -> op == expr_not_equal;
+		    else {
+			switch (obv -> type) {
+			  case binding_boolean:
+			    if (bv -> value.boolean == obv -> value.boolean)
+				*result = expr -> op == expr_equal;
+			    else
+				*result = expr -> op == expr_not_equal;
+			    break;
+
+			  case binding_data:
+			    if ((bv -> value.data.len ==
+				 obv -> value.data.len) &&
+				!memcmp (bv -> value.data.data,
+					 obv -> value.data.data,
+					 obv -> value.data.len))
+				*result = expr -> op == expr_equal;
+			    else
+				*result = expr -> op == expr_not_equal;
+			    break;
+
+			  case binding_numeric:
+			    if (bv -> value.intval == obv -> value.intval)
+				*result = expr -> op == expr_equal;
+			    else
+				*result = expr -> op == expr_not_equal;
+			    break;
+
+			  case binding_dns:
+			    /* XXX This should be a comparison for equal
+			       XXX values, not for identity. */
+			    if (bv -> value.dns == obv -> value.dns)
+				*result = expr -> op == expr_equal;
+			    else
+				*result = expr -> op == expr_not_equal;
+			    break;
+
+			  case binding_function:
+			    if (bv -> value.fundef == obv -> value.fundef)
+				*result = expr -> op == expr_equal;
+			    else
+				*result = expr -> op == expr_not_equal;
+			    break;
+			  default:
+			    *result = expr -> op == expr_not_equal;
+			    break;
+			}
+		    }
+		} else if (!sleft && !sright)
+		    *result = expr -> op == expr_equal;
+		else
+		    *result = expr -> op == expr_not_equal;
 
 #if defined (DEBUG_EXPRESSIONS)
-		log_debug ("bool: %sequal (%s, %s) = %s",
+		log_debug ("bool: %sequal = %s",
 			   expr -> op == expr_not_equal ? "not" : "",
-			   (sleft
-			    ? print_hex_1 (left.len, left.data, 30)
-			    : "NULL"),
-			   (sright
-			    ? print_hex_2 (right.len, right.data, 30)
-			    : "NULL"),
 			   (*result ? "true" : "false"));
 #endif
 		if (sleft)
-			data_string_forget (&left, MDL);
+			binding_value_dereference (&bv, MDL);
 		if (sright)
-			data_string_forget (&right, MDL);
+			binding_value_dereference (&obv, MDL);
 		return 1;
 
 	      case expr_and:
@@ -1067,7 +1114,12 @@ int evaluate_boolean_expression (result, packet, lease, client_state,
 	      case expr_static:
 		if (!lease || !(lease -> flags & STATIC_LEASE)) {
 #if defined (DEBUG_EXPRESSIONS)
-			log_debug ("bool: static = false");
+			log_debug ("bool: static = false (%s %s %s %d)",
+				   lease ? "y" : "n",
+				   (lease && (lease -> flags & STATIC_LEASE)
+				    ? "y" : "n"),
+				   piaddr (lease -> ip_addr),
+				   lease ? lease -> flags : 0);
 #endif
 			*result = 0;
 			return 1;
@@ -2053,9 +2105,7 @@ int evaluate_numeric_expression (result, packet, lease, client_state,
 	int status, sleft, sright;
 #if defined (NSUPDATE)
 	ns_updrec *nut;
-	static struct __res_state res;
 	ns_updque uq;
-	static int inited;
 #endif
 	struct expression *cur, *next;
 	struct binding *binding;
@@ -2181,9 +2231,11 @@ int evaluate_numeric_expression (result, packet, lease, client_state,
 #if !defined (NSUPDATE)
 		return 0;
 #else
-		if (!inited) {
-			minires_ninit (&res);
-			inited = 1;
+		if (!resolver_inited) {
+			minires_ninit (&resolver_state);
+			resolver_inited = 1;
+			resolver_state.retrans = 1;
+			resolver_state.retry = 1;
 		}
 		ISC_LIST_INIT (uq);
 		cur = expr;
@@ -2202,7 +2254,8 @@ int evaluate_numeric_expression (result, packet, lease, client_state,
 
 		/* Do the update and record the error code, if there was
 		   an error; otherwise set it to NOERROR. */
-		*result = minires_nupdate (&res, ISC_LIST_HEAD (uq));
+		*result = minires_nupdate (&resolver_state,
+					   ISC_LIST_HEAD (uq));
 		status = 1;
 
 		print_dns_status ((int)*result, &uq);
@@ -2211,9 +2264,10 @@ int evaluate_numeric_expression (result, packet, lease, client_state,
 		while (!ISC_LIST_EMPTY (uq)) {
 			ns_updrec *tmp = ISC_LIST_HEAD (uq);
 			ISC_LIST_UNLINK (uq, tmp, r_link);
-			if (tmp -> r_data) {
-				dfree (tmp -> r_data, MDL);
+			if (tmp -> r_data_ephem) {
+				dfree (tmp -> r_data_ephem, MDL);
 				tmp -> r_data = (unsigned char *)0;
+				tmp -> r_data_ephem = (unsigned char *)0;
 			}
 			minires_freeupdrec (tmp);
 		}
@@ -3038,6 +3092,19 @@ int op_precedence (op1, op2)
 	int ov1, ov2;
 
 	return op_val (op1) - op_val (op2);
+}
+
+enum expression_context expression_context (struct expression *expr)
+{
+	if (is_data_expression (expr))
+		return context_data;
+	if (is_numeric_expression (expr))
+		return context_numeric;
+	if (is_boolean_expression (expr))
+		return context_boolean;
+	if (is_dns_expression (expr))
+		return context_dns;
+	return context_any;
 }
 
 enum expression_context op_context (op)
@@ -3893,5 +3960,104 @@ int expr_valid_for_context (struct expression *expr,
 	return 0;
 }
 #endif /* NOTYET */
+
+struct binding *create_binding (struct binding_scope **scope, const char *name)
+{
+	struct binding *binding;
+
+	if (!*scope) {
+		if (!binding_scope_allocate (scope, MDL))
+			return (struct binding *)0;
+	}
+
+	binding = find_binding (*scope, name);
+	if (!binding) {
+		binding = dmalloc (sizeof *binding, MDL);
+		if (!binding)
+			return (struct binding *)0;
+
+		memset (binding, 0, sizeof *binding);
+		binding -> name = dmalloc (strlen (name) + 1, MDL);
+		if (!binding -> name) {
+			dfree (binding, MDL);
+			return (struct binding *)0;
+		}
+		strcpy (binding -> name, name);
+
+		binding -> next = (*scope) -> bindings;
+		(*scope) -> bindings = binding;
+	}
+
+	return binding;
+}
+
+
+int bind_ds_value (struct binding_scope **scope,
+		   const char *name,
+		   struct data_string *value)
+{
+	struct binding *binding;
+
+	binding = create_binding (scope, name);
+	if (!binding)
+		return 0;
+
+	if (binding -> value)
+		binding_value_dereference (&binding -> value, MDL);
+
+	if (!binding_value_allocate (&binding -> value, MDL))
+		return 0;
+
+	data_string_copy (&binding -> value -> value.data, value, MDL);
+	binding -> value -> type = binding_data;
+
+	return 1;
+}
+
+
+int find_bound_string (struct data_string *value,
+		       struct binding_scope *scope,
+		       const char *name)
+{
+	struct binding *binding;
+
+	binding = find_binding (scope, name);
+	if (!binding ||
+	    !binding -> value ||
+	    binding -> value -> type != binding_data)
+		return 0;
+
+	if (binding -> value -> value.data.terminated) {
+		data_string_copy (value, &binding -> value -> value.data, MDL);
+	} else {
+		buffer_allocate (&value -> buffer,
+				 binding -> value -> value.data.len,
+				 MDL);
+		if (!value -> buffer)
+			return 0;
+
+		memcpy (value -> buffer -> data,
+			binding -> value -> value.data.data,
+			binding -> value -> value.data.len);
+		value -> data = value -> buffer -> data;
+		value -> len = binding -> value -> value.data.len;
+	}
+
+	return 1;
+}
+
+int unset (struct binding_scope *scope, const char *name)
+{
+	struct binding *binding;
+
+	binding = find_binding (scope, name);
+	if (binding) {
+		if (binding -> value)
+			binding_value_dereference
+				(&binding -> value, MDL);
+		return 1;
+	}
+	return 0;
+}
 
 /* vim: set tabstop=8: */

@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: mdb.c,v 1.44 2000/11/28 23:27:21 mellon Exp $ Copyright (c) 1996-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: mdb.c,v 1.49 2001/01/06 21:39:30 mellon Exp $ Copyright (c) 1996-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -945,6 +945,12 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 	comp -> next_binding_state = lease -> next_binding_state;
 
       just_move_it:
+	if (!comp -> pool) {
+		log_error ("Supersede_lease: lease %s with no pool.",
+			   piaddr (lease -> ip_addr));
+		return 0;
+	}
+
 	/* Figure out which queue it's on. */
 	switch (comp -> binding_state) {
 	      case FTS_FREE:
@@ -1062,6 +1068,7 @@ void process_state_transition (struct lease *lease)
 	     lease -> binding_state == FTS_BOOTP ||
 	     lease -> binding_state == FTS_RESERVED) &&
 	    lease -> next_binding_state != FTS_RELEASED) {
+		ddns_removals (lease);
 		if (lease -> on_expiry) {
 			execute_statements ((struct binding_value **)0,
 					    (struct packet *)0, lease,
@@ -1089,6 +1096,7 @@ void process_state_transition (struct lease *lease)
 	     lease -> binding_state == FTS_BOOTP ||
 	     lease -> binding_state == FTS_RESERVED) &&
 	    lease -> next_binding_state == FTS_RELEASED) {
+		ddns_removals (lease);
 		if (lease -> on_release) {
 			execute_statements ((struct binding_value **)0,
 					    (struct packet *)0, lease,
@@ -1210,6 +1218,7 @@ void release_lease (lease, packet)
 {
 	/* If there are statements to execute when the lease is
 	   released, execute them. */
+	ddns_removals (lease);
 	if (lease -> on_release) {
 		execute_statements ((struct binding_value **)0,
 				    packet, lease, (struct client_state *)0,
@@ -1263,6 +1272,7 @@ void abandon_lease (lease, message)
 	if (!lease_copy (&lt, lease, MDL))
 		return;
 
+#if 0
 	if (lt -> on_expiry)
 		executable_statement_dereference (&lease -> on_expiry, MDL);
 	if (lt -> on_release)
@@ -1273,6 +1283,8 @@ void abandon_lease (lease, message)
 	/* Blow away any bindings. */
 	if (lt -> scope)
 		binding_scope_dereference (&lt -> scope, MDL);
+#endif
+
 	lt -> ends = cur_time; /* XXX */
 	lt -> next_binding_state = FTS_ABANDONED;
 
@@ -1301,6 +1313,7 @@ void dissociate_lease (lease)
 	if (!lease_copy (&lt, lease, MDL))
 		return;
 
+#if 0
 	if (lt -> on_expiry)
 		executable_statement_dereference (&lease -> on_expiry, MDL);
 	if (lt -> on_release)
@@ -1311,6 +1324,7 @@ void dissociate_lease (lease)
 	/* Blow away any bindings. */
 	if (lt -> scope)
 		binding_scope_dereference (&lt -> scope, MDL);
+#endif
 
 #if defined (FAILOVER_PROTOCOL)
 	if (lease -> pool && lease -> pool -> failover_peer) {
@@ -1503,8 +1517,8 @@ void uid_hash_delete (lease)
 				break;
 			}
 		}
-		lease_dereference (&head, MDL);
 	}
+	lease_dereference (&head, MDL);
 }
 
 /* Add the specified lease to the hardware address hash. */

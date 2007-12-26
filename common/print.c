@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: print.c,v 1.46 2000/11/28 23:18:40 mellon Exp $ Copyright (c) 1995, 1996, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: print.c,v 1.48 2001/01/16 23:12:47 mellon Exp $ Copyright (c) 1995, 1996, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -57,9 +57,9 @@ char *print_hw_addr (htype, hlen, data)
 	char *s;
 	int i;
 
-	if (htype == 0 || hlen == 0) {
-		strcpy (habuf, "<null>");
-	} else {
+	if (hlen == 0)
+		habuf [0] = 0;
+	else {
 		s = habuf;
 		for (i = 0; i < hlen; i++) {
 			sprintf (s, "%02x", data [i]);
@@ -1028,11 +1028,19 @@ void print_dns_status (int status, ns_updque *uq)
 		switch (u -> r_opcode)
 		{
 		      case NXRRSET:
-			op = "doesn't exist";
+			op = "rrset doesn't exist";
 			position = 1;
 			break;
 		      case YXRRSET:
-			op = "exists";
+			op = "rrset exists";
+			position = 1;
+			break;
+		      case NXDOMAIN:
+			op = "domain doesn't exist";
+			position = 1;
+			break;
+		      case YXDOMAIN:
+			op = "domain exists";
 			position = 1;
 			break;
 		      case ADD:
@@ -1161,6 +1169,8 @@ void print_dns_status (int status, ns_updque *uq)
 		s += strlen (s);
 	}
 	errorp = 1;
+	en = isc_result_totext (status);
+#if 0
 	switch (status) {
 	      case -1:
 		en = "resolver failed";
@@ -1215,6 +1225,7 @@ void print_dns_status (int status, ns_updque *uq)
 		en = "unknown error";
 		break;
 	}
+#endif
 
 	if (s + 2 < end) {
 		*s++ = ':';

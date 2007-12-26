@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: stables.c,v 1.19 2000/11/28 23:27:24 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: stables.c,v 1.24 2001/01/17 00:21:03 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -483,12 +483,12 @@ struct option server_options [256] = {
 	{ "local-address", "I",			&server_universe, 35 },
 	{ "omapi-key", "t",			&server_universe, 36 },
 	{ "stash-agent-options", "f",		&server_universe, 37 },
-	{ "option-38", "X",			&server_universe, 38 },
-	{ "option-39", "X",			&server_universe, 39 },
-	{ "option-40", "X",			&server_universe, 40 },
-	{ "option-41", "X",			&server_universe, 41 },
-	{ "option-42", "X",			&server_universe, 42 },
-	{ "option-43", "X",			&server_universe, 43 },
+	{ "ddns-ttl", "T",			&server_universe, 38 },
+	{ "ddns-update-style", "Nddns-styles.",	&server_universe, 39 },
+	{ "client-updates", "f",		&server_universe, 40 },
+	{ "update-optimization", "f",		&server_universe, 41 },
+	{ "ping-check", "f",			&server_universe, 42 },
+	{ "update-static-leases", "f",		&server_universe, 43 },
 	{ "option-44", "X",			&server_universe, 44 },
 	{ "option-45", "X",			&server_universe, 45 },
 	{ "option-46", "X",			&server_universe, 46 },
@@ -701,6 +701,19 @@ struct option server_options [256] = {
 	{ "option-253", "X",			&server_universe, 253 },
 	{ "option-254", "X",			&server_universe, 254 },
 	{ "option-end", "e",			&server_universe, 255 },
+};
+
+struct enumeration_value ddns_styles_values [] = {
+	{ "none", 0 },
+	{ "ad-hoc", 1 },
+	{ "interim", 2 },
+	{ (char *)0, 0 }
+};
+
+struct enumeration ddns_styles = {
+	(struct enumeration *)0,
+	"ddns-styles",
+	ddns_styles_values
 };
 
 void initialize_server_option_spaces()

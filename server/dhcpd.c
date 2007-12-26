@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhcpd.c,v 1.103 2000/11/29 05:35:02 mellon Exp $ Copyright 1995-2000 Internet Software Consortium.";
+"$Id: dhcpd.c,v 1.108 2001/01/11 23:16:31 mellon Exp $ Copyright 1995-2000 Internet Software Consortium.";
 #endif
 
   static char copyright[] =
@@ -63,14 +63,26 @@ TIME cur_time;
 struct iaddr server_identifier;
 int server_identifier_matched;
 
-/* This is the standard name service updater that is executed whenever a
-   lease is committed.   Right now it's not following the DHCP-DNS draft
-   at all, but as soon as I fix the resolver it should try to. */
-
 #if defined (NSUPDATE)
+
+/* This stuff is always executed to figure the default values for certain
+   ddns variables. */
+
 char std_nsupdate [] = "						    \n\
+option server.ddns-hostname =						    \n\
+  pick (option fqdn.hostname, option host-name);			    \n\
+option server.ddns-domainname =	config-option domain-name;		    \n\
+option server.ddns-ttl = encode-int(lease-time / 2, 32);		    \n\
+option server.ddns-rev-domainname = \"in-addr.arpa.\";";
+
+/* This is the old-style name service updater that is executed
+   whenever a lease is committed.  It does not follow the DHCP-DNS
+   draft at all. */
+
+char old_nsupdate [] = "						    \n\
 on commit {								    \n\
-  if (((config-option server.ddns-updates = null) or			    \n\
+  if (not static and							    \n\
+      ((config-option server.ddns-updates = null) or			    \n\
        (config-option server.ddns-updates != 0))) {			    \n\
     set new-ddns-fwd-name =						    \n\
       concat (pick (config-option server.ddns-hostname,			    \n\
@@ -142,6 +154,8 @@ on commit {								    \n\
     unset new-ddns-fwd-name;						    \n\
   }									    \n\
 }";
+
+int ddns_update_style;
 #endif /* NSUPDATE */
 
 const char *path_dhcpd_conf = _PATH_DHCPD_CONF;
@@ -205,9 +219,10 @@ int main (argc, argv, envp)
 		log_fatal ("Can't initialize OMAPI: %s",
 			   isc_result_totext (result));
 
+	/* Set up the OMAPI wrappers for common objects. */
+	dhcp_db_objects_setup ();
 	/* Set up the OMAPI wrappers for various server database internal
 	   objects. */
-	dhcp_db_objects_setup ();
 	dhcp_common_objects_setup ();
 
 	/* Initially, log errors to stderr as well as to syslogd. */
@@ -356,6 +371,9 @@ int main (argc, argv, envp)
 	/* Set up the initial dhcp option universe. */
 	initialize_common_option_spaces ();
 	initialize_server_option_spaces ();
+
+	/* Add the ddns update style enumeration prior to parsing. */
+	add_enumeration (&ddns_styles);
 
 	if (!group_allocate (&root_group, MDL))
 		log_fatal ("Can't allocate root group!");
@@ -517,9 +535,75 @@ int main (argc, argv, envp)
 		data_string_forget (&db, MDL);
 	}
 
+	oc = lookup_option (&server_universe, options, SV_DDNS_UPDATE_STYLE);
+	if (oc) {
+		if (evaluate_option_cache (&db, (struct packet *)0,
+					   (struct lease *)0,
+					   (struct client_state *)0,
+					   options,
+					   (struct option_state *)0,
+					   &global_scope, oc, MDL)) {
+			if (db.len == 1) {
+				ddns_update_style = db.data [0];
+			} else
+				log_fatal ("invalid dns update type");
+			data_string_forget (&db, MDL);
+		}
+	} else {
+		log_info ("%s", "");
+		log_error ("** You must set ddns-update-style before %s",
+			   "dhcpd will run. **");
+		log_error ("** To get the same behaviour as in 3.0b2pl11 %s",
+			   "and previous");
+		log_error ("   versions, use \"ddns-update-style ad-hoc;\" **");
+		log_fatal ("ddns-update-style is documented in the %s",
+			   "dhcpd.conf manual page.");
+	}
+
 	/* Don't need the options anymore. */
 	option_state_dereference (&options, MDL);
 	
+#if defined (NSUPDATE)
+	/* If old-style ddns updates have been requested, parse the
+	   old-style ddns updater. */
+	if (ddns_update_style == 1) {
+		struct executable_statement **e, *s;
+
+		if (root_group -> statements) {
+			s = (struct executable_statement *)0;
+			if (!executable_statement_allocate (&s, MDL))
+				log_fatal ("no memory for ddns updater");
+			executable_statement_reference
+				(&s -> next, root_group -> statements, MDL);
+			executable_statement_dereference
+				(&root_group -> statements, MDL);
+			executable_statement_reference
+				(&root_group -> statements, s, MDL);
+			s -> op = statements_statement;
+			e = &s -> data.statements;
+			executable_statement_dereference (&s, MDL);
+		} else {
+			e = &root_group -> statements;
+		}
+
+		/* Set up the standard name service updater routine. */
+		parse = (struct parse *)0;
+		status = new_parse (&parse, -1,
+				    old_nsupdate, (sizeof old_nsupdate) - 1,
+				    "old name service update routine");
+		if (status != ISC_R_SUCCESS)
+			log_fatal ("can't begin parsing old ddns updater!");
+
+		lose = 0;
+		if (!(parse_executable_statements (e, parse,
+						   &lose, context_any))) {
+			end_parse (&parse);
+			log_fatal ("can't parse standard ddns updater!");
+		}
+		end_parse (&parse);
+	}
+#endif
+
 	group_write_hook = group_writer;
 
 	/* Start up the database... */

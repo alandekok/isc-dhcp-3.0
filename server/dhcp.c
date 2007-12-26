@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.171 2000/11/30 14:04:06 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.177 2001/01/16 23:57:23 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -370,6 +370,7 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 {
 	struct lease *lease;
 	struct iaddr cip;
+	struct iaddr sip;
 	struct subnet *subnet;
 	int ours = 0;
 	struct option_cache *oc;
@@ -377,6 +378,7 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 	int status;
 	char msgbuf [1024]; /* XXX */
 	char *s;
+	char smbuf [19];
 #if defined (FAILOVER_PROTOCOL)
 	dhcp_failover_state_t *peer;
 #endif
@@ -415,9 +417,24 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 	else
 		s = (char *)0;
 
+	oc = lookup_option (&dhcp_universe, packet -> options,
+			    DHO_DHCP_SERVER_IDENTIFIER);
+	memset (&data, 0, sizeof data);
+	if (oc &&
+	    evaluate_option_cache (&data, packet, (struct lease *)0,
+				   (struct client_state *)0,
+				   packet -> options, (struct option_state *)0,
+				   &global_scope, oc, MDL)) {
+		sip.len = 4;
+		memcpy (sip.iabuf, data.data, 4);
+		data_string_forget (&data, MDL);
+		sprintf (smbuf, " (%s)", piaddr (sip));
+	} else
+		smbuf [0] = 0;
+
 	/* Say what we're doing... */
-	sprintf (msgbuf, "DHCPREQUEST for %s from %s %s%s%svia %s",
-		 piaddr (cip),
+	sprintf (msgbuf, "DHCPREQUEST for %s%s from %s %s%s%svia %s",
+		 piaddr (cip), smbuf,
 		 (packet -> raw -> htype
 		  ? print_hw_addr (packet -> raw -> htype,
 				   packet -> raw -> hlen,
@@ -514,7 +531,9 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 				goto out;
 			}
 			/* Otherwise, ignore it. */
-			log_info ("%s: ignored (not authoritative).", msgbuf);
+			log_info ("%s: ignored (%s).", msgbuf,
+				  (subnet
+				   ? "not authoritative" : "unknown subnet"));
 			goto out;
 		}
 
@@ -1322,6 +1341,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 	struct expression *expr;
 	int status;
 	isc_result_t result;
+	int did_ping = 0;
 
 	unsigned i, j;
 	int s1, s2;
@@ -1462,7 +1482,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					s = s -> n_uid;
 				}
 				if (s) {
-					release_lease (seek, packet);
+					release_lease (s, packet);
 				}
 				if (seek)
 					lease_dereference (&seek, MDL);
@@ -1496,7 +1516,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					release_lease (s, packet);
 				}
 				if (seek)
-					lease_dereference (&s, MDL);
+					lease_dereference (&seek, MDL);
 			} while (s);
 		}
 	}
@@ -1976,6 +1996,14 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 		data_string_forget (&d1, MDL);
 	}
 
+	/* Record the hardware address, if given... */
+	lt -> hardware_addr.hlen = packet -> raw -> hlen + 1;
+	lt -> hardware_addr.hbuf [0] = packet -> raw -> htype;
+	memcpy (&lt -> hardware_addr.hbuf [1], packet -> raw -> chaddr,
+		sizeof packet -> raw -> chaddr);
+
+	lt -> flags = lease -> flags & ~PERSISTENT_FLAGS;
+
 	/* If there are statements to execute when the lease is
 	   committed, execute them. */
 	if (lease -> on_commit && (!offer || offer == DHCPACK)) {
@@ -1989,6 +2017,20 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 							  MDL);
 	}
 
+#ifdef NSUPDATE
+	/* Perform DDNS updates, if configured to. */
+	if ((!offer || offer == DHCPACK) &&
+	    (!(oc = lookup_option (&server_universe, state -> options,
+				   SV_DDNS_UPDATES)) ||
+	     evaluate_boolean_option_cache (&ignorep, packet, lt,
+					    (struct client_state *)0,
+					    packet -> options,
+					    state -> options,
+					    &lt -> scope, oc, MDL))) {
+		ddns_updates (packet, lt, lease, state);
+	}
+#endif /* NSUPDATE */
+
 	/* Don't call supersede_lease on a mocked-up lease. */
 	if (lease -> flags & STATIC_LEASE) {
 		/* Copy the hardware address into the static lease
@@ -1999,12 +2041,6 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 			packet -> raw -> chaddr,
 			sizeof packet -> raw -> chaddr); /* XXX */
 	} else {
-		/* Record the hardware address, if given... */
-		lt -> hardware_addr.hlen = packet -> raw -> hlen + 1;
-		lt -> hardware_addr.hbuf [0] = packet -> raw -> htype;
-		memcpy (&lt -> hardware_addr.hbuf [1], packet -> raw -> chaddr,
-			sizeof packet -> raw -> chaddr);
-
 		/* Install the new information about this lease in the
 		   database.  If this is a DHCPACK or a dynamic BOOTREPLY
 		   and we can't write the lease, don't ACK it (or BOOTREPLY
@@ -2378,7 +2414,14 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 	/* If this is a DHCPOFFER, ping the lease address before actually
 	   sending the offer. */
 	if (offer == DHCPOFFER && !(lease -> flags & STATIC_LEASE) &&
-	    cur_time - lease -> timestamp > 60) {
+	    cur_time - lease -> timestamp > 60 &&
+	    (!(oc = lookup_option (&server_universe, state -> options,
+				   SV_PING_CHECKS)) ||
+	     evaluate_boolean_option_cache (&ignorep, packet, lease,
+					    (struct client_state *)0,
+					    packet -> options,
+					    state -> options,
+					    &lease -> scope, oc, MDL))) {
 		lease -> timestamp = cur_time;
 		icmp_echorequest (&lease -> ip_addr);
 		add_timeout (cur_time + 1, lease_ping_timeout, lease,
@@ -2620,7 +2663,7 @@ int find_lease (struct lease **lp,
 	struct host_decl *hp = (struct host_decl *)0;
 	struct host_decl *host = (struct host_decl *)0;
 	struct lease *fixed_lease = (struct lease *)0;
-	struct lease *next;
+	struct lease *next = (struct lease *)0;
 	struct option_cache *oc;
 	struct data_string d1;
 	int have_client_identifier = 0;
@@ -2743,9 +2786,10 @@ int find_lease (struct lease **lp,
 			log_info ("wrong network segment: %s",
 				  piaddr (uid_lease -> ip_addr));
 #endif
-			next = uid_lease -> n_uid;
+			lease_reference (&next, uid_lease -> n_uid, MDL);
 			lease_dereference (&uid_lease, MDL);
 			lease_reference (&uid_lease, next, MDL);
+			lease_dereference (&next, MDL);
 			continue;
 		}
 		if ((uid_lease -> pool -> prohibit_list &&
@@ -2756,11 +2800,12 @@ int find_lease (struct lease **lp,
 			log_info ("not permitted: %s",
 				  piaddr (uid_lease -> ip_addr));
 #endif
-			next = uid_lease -> n_uid;
+			lease_reference (&next, uid_lease -> n_uid, MDL);
 			if (!packet -> raw -> ciaddr.s_addr)
 				release_lease (uid_lease, packet);
 			lease_dereference (&uid_lease, MDL);
 			lease_reference (&uid_lease, next, MDL);
+			lease_dereference (&next, MDL);
 			continue;
 		}
 		break;
@@ -2793,9 +2838,10 @@ int find_lease (struct lease **lp,
 			log_info ("wrong client identifier: %s",
 				  piaddr (hw_lease -> ip_addr));
 #endif
-			next = hw_lease -> n_hw;
+			lease_reference (&next, hw_lease -> n_hw, MDL);
 			lease_dereference (&hw_lease, MDL);
 			lease_reference (&hw_lease, next, MDL);
+			lease_dereference (&next, MDL);
 			continue;
 		}
 		if (hw_lease -> subnet -> shared_network != share) {
@@ -2803,9 +2849,10 @@ int find_lease (struct lease **lp,
 			log_info ("wrong network segment: %s",
 				  piaddr (hw_lease -> ip_addr));
 #endif
-			next = hw_lease -> n_hw;
+			lease_reference (&next, hw_lease -> n_hw, MDL);
 			lease_dereference (&hw_lease, MDL);
 			lease_reference (&hw_lease, next, MDL);
+			lease_dereference (&next, MDL);
 			continue;
 		}
 		if ((hw_lease -> pool -> prohibit_list &&
@@ -2816,11 +2863,12 @@ int find_lease (struct lease **lp,
 			log_info ("not permitted: %s",
 				  piaddr (hw_lease -> ip_addr));
 #endif
-			next = hw_lease -> n_hw;
+			lease_reference (&next, hw_lease -> n_hw, MDL);
 			if (!packet -> raw -> ciaddr.s_addr)
 				release_lease (hw_lease, packet);
 			lease_dereference (&hw_lease, MDL);
 			lease_reference (&hw_lease, next, MDL);
+			lease_dereference (&next, MDL);
 			continue;
 		}
 		break;
@@ -3307,13 +3355,13 @@ int allocate_lease (struct lease **lp, struct packet *packet,
 			lease = pool -> backup;
 		}
 	} else
-		lease = pool -> free;
-#else
-	if (pool -> free)
-		lease = pool -> free;
-	else
-		lease = pool -> abandoned;
 #endif
+	{
+		if (pool -> free)
+			lease = pool -> free;
+		else
+			lease = pool -> abandoned;
+	}
 
 	/* If there are no leases in the pool that have
 	   expired, try the next one. */

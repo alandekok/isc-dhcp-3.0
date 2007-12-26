@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: conflex.c,v 1.83 2000/11/28 22:11:52 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: conflex.c,v 1.86 2001/01/16 22:50:02 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -540,6 +540,8 @@ static enum dhcp_token intern (atom, dfv)
 			return BOOLEAN;
 		if (!strcasecmp (atom + 1, "alance"))
 			return BALANCE;
+		if (!strcasecmp (atom + 1, "ound"))
+			return BOUND;
 		break;
 	      case 'c':
 		if (!strcasecmp (atom + 1, "ase"))
@@ -563,6 +565,8 @@ static enum dhcp_token intern (atom, dfv)
 				return CLIENT_HOSTNAME;
 			if (!strcasecmp (atom + 6, "-state"))
 				return CLIENT_STATE;
+			if (!strcasecmp (atom + 6, "-updates"))
+				return CLIENT_UPDATES;
 			if (!strcasecmp (atom + 6, "s"))
 				return CLIENTS;
 		}
@@ -805,6 +809,8 @@ static enum dhcp_token intern (atom, dfv)
 			return TOKEN_NULL;
 		if (!strcasecmp (atom + 1, "ext"))
 			return TOKEN_NEXT;
+		if (!strcasecmp (atom + 1, "ew"))
+			return TOKEN_NEW;
 		break;
 	      case 'o':
 		if (!strcasecmp (atom + 1, "mapi"))
@@ -860,6 +866,8 @@ static enum dhcp_token intern (atom, dfv)
 			return RECOVER;
 		if (!strcasecmp (atom + 1, "ecover-done"))
 			return RECOVER_DONE;
+		if (!strcasecmp (atom + 1, "econtact-interval"))
+			return RECONTACT_INTERVAL;
 		if (!strcasecmp (atom + 1, "equest"))
 			return REQUEST;
 		if (!strcasecmp (atom + 1, "equire"))
@@ -922,6 +930,8 @@ static enum dhcp_token intern (atom, dfv)
 			return SERVER_IDENTIFIER;
 		if (!strcasecmp (atom + 1, "elect-timeout"))
 			return SELECT_TIMEOUT;
+		if (!strcasecmp (atom + 1, "elect"))
+			return SELECT;
 		if (!strcasecmp (atom + 1, "end"))
 			return SEND;
 		if (!strcasecmp (atom + 1, "cript"))

@@ -43,10 +43,49 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: parse.c,v 1.91 2000/11/28 23:16:26 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: parse.c,v 1.97 2001/01/16 23:06:06 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
+
+/* Enumerations can be specified in option formats, and are used for
+   parsing, so we define the routines that manage them here. */
+
+struct enumeration *enumerations;
+
+void add_enumeration (struct enumeration *enumeration)
+{
+	enumeration -> next = enumerations;
+	enumerations = enumeration;
+}
+
+struct enumeration *find_enumeration (const char *name, int length)
+{
+	struct enumeration *e;
+
+	for (e = enumerations; e; e = e -> next)
+		if (strlen (e -> name) == length &&
+		    !memcmp (e -> name, name, (unsigned)length))
+			return e;
+	return (struct enumeration *)0;
+}
+
+struct enumeration_value *find_enumeration_value (const char *name,
+						  int length,
+						  const char *value)
+{
+	struct enumeration *e;
+	int i;
+
+	e = find_enumeration (name, length);
+	if (e) {
+		for (i = 0; e -> values [i].name; i++) {
+			if (!strcmp (value, e -> values [i].name))
+				return &e -> values [i];
+		}
+	}
+	return (struct enumeration_value *)0;
+}
 
 /* Skip to the semicolon ending the current statement.   If we encounter
    braces, the matching closing brace terminates the statement.   If we
@@ -322,10 +361,17 @@ void parse_hardware_param (cfile, hardware)
 	   that data in the lease file rather than simply failing on such
 	   clients.   Yuck. */
 	hlen = 0;
+	token = peek_token (&val, cfile);
+	if (token == SEMI) {
+		hardware -> hlen = 1;
+		goto out;
+	}
 	t = parse_numeric_aggregate (cfile, (unsigned char *)0, &hlen,
 				     COLON, 16, 8);
-	if (!t)
+	if (!t) {
+		hardware -> hlen = 1;
 		return;
+	}
 	if (hlen + 1 > sizeof hardware -> hbuf) {
 		dfree (t, MDL);
 		parse_warn (cfile, "hardware address too long");
@@ -338,6 +384,7 @@ void parse_hardware_param (cfile, hardware)
 		dfree (t, MDL);
 	}
 	
+      out:
 	token = next_token (&val, cfile);
 	if (token != SEMI) {
 		parse_warn (cfile, "expecting semicolon.");
@@ -1239,27 +1286,13 @@ int parse_base64 (data, cfile)
 			     64, 26, 27, 28, 29, 30, 31, 32,  /* 'abcdefg */
 			     33, 34, 35, 36, 37, 38, 39, 40,  /* hijklmno */
 			     41, 42, 43, 44, 45, 46, 47, 48,  /* pqrstuvw */
-			     59, 50, 51, 64, 64, 64, 64, 64}; /* xyz{|}~  */
+			     49, 50, 51, 64, 64, 64, 64, 64}; /* xyz{|}~  */
 	struct string_list *bufs = (struct string_list *)0,
 			   *last = (struct string_list *)0,
 			   *t;
 	int cc = 0;
 	int terminated = 0;
 	
-	token = peek_token (&val, cfile);
-	if (token == STRING) {
-		token = next_token (&val, cfile);
-		data -> len = strlen (val) + 1;
-		if (!buffer_allocate (&data -> buffer, data -> len, MDL)) {
-			parse_warn (cfile, "can't allocate string buffer");
-			return 0;
-		}
-		strcpy ((char *)data -> buffer -> data, val);
-		data -> terminated = 1;
-		data -> data = data -> buffer -> data;
-		return 1;
-	}
-
 	/* It's possible for a + or a / to cause a base64 quantity to be
 	   tokenized into more than one token, so we have to parse them all
 	   in before decoding. */
@@ -1281,7 +1314,8 @@ int parse_base64 (data, cfile)
 		last = t;
 		token = peek_token (&val, cfile);
 	} while (token == NUMBER_OR_NAME || token == NAME || token == EQUAL ||
-		 token == NUMBER || token == PLUS || token == SLASH);
+		 token == NUMBER || token == PLUS || token == SLASH ||
+		 token == STRING);
 
 	data -> len = cc;
 	data -> len = (data -> len * 3) / 4;
@@ -1522,10 +1556,15 @@ int parse_executable_statement (result, cfile, lose, case_context)
 		break;
 
 	      case SEND:
-		*lose = 1;
-		parse_warn (cfile, "send not appropriate here.");
-		skip_to_semi (cfile);
-		return 0;
+		token = next_token (&val, cfile);
+		known = 0;
+		option = parse_option_name (cfile, 0, &known);
+		if (!option) {
+			*lose = 1;
+			return 0;
+		}
+		return parse_option_statement (result, cfile, 1, option,
+					       send_option_statement);
 
 	      case SUPERSEDE:
 	      case OPTION:
@@ -1985,6 +2024,7 @@ int parse_zone (struct dns_zone *zone, struct parse *cfile)
 {
 	int token;
 	const char *val;
+	char *key_name;
 	struct option_cache *oc;
 	int done = 0;
 
@@ -2057,15 +2097,21 @@ int parse_zone (struct dns_zone *zone, struct parse *cfile)
 
 		  case KEY:
 		    token = next_token (&val, cfile);
-		    token = next_token (&val, cfile);
-		    if (token != STRING && !is_identifier (token)) {
-			    parse_warn (cfile, "expecting key name.");
-			    skip_to_semi (cfile);
-			    return 0;
+		    token = peek_token (&val, cfile);
+		    if (token == STRING) {
+			    token = next_token (&val, cfile);
+			    key_name = (char *)0;
+		    } else {
+			    key_name = parse_host_name (cfile);
+			    if (!key_name)
+				    return 0;
+			    val = key_name;
 		    }
 		    if (omapi_auth_key_lookup_name (&zone -> key, val) !=
 			ISC_R_SUCCESS)
 			    parse_warn (cfile, "unknown key %s", val);
+		    if (key_name)
+			    dfree (key_name, MDL);
 		    if (!parse_semi (cfile))
 			    return 0;
 		    break;
@@ -2100,25 +2146,32 @@ int parse_key (struct parse *cfile)
 	struct auth_key *key;
 	struct data_string ds;
 	isc_result_t status;
+	char *s;
 
-	token = next_token (&val, cfile);
-	if (token != STRING && !is_identifier (token)) {
-		parse_warn (cfile, "expecting key name string.");
-		skip_to_semi (cfile);
-		return 0;
-	}
 	key = (struct auth_key *)0;
 	if (omapi_auth_key_new (&key, MDL) != ISC_R_SUCCESS)
-		log_fatal ("no memory for tsig key");
-	key -> name = dmalloc (strlen (val) + 1, MDL);
-	if (!key -> name)
-		log_fatal ("no memory for tsig key name.");
-	strcpy (key -> name, val);
+		log_fatal ("no memory for key");
+
+	token = peek_token (&val, cfile);
+	if (token == STRING) {
+		token = next_token (&val, cfile);
+		key -> name = dmalloc (strlen (val) + 1, MDL);
+		if (!key -> name)
+			log_fatal ("no memory for key name.");
+		strcpy (key -> name, val);
+
+	} else {
+		key -> name = parse_host_name (cfile);
+		if (!key -> name) {
+			skip_to_semi (cfile);
+			goto bad;
+		}
+	}
 
 	token = next_token (&val, cfile);
 	if (token != LBRACE) {
 		parse_warn (cfile, "expecting left brace");
-		return 0;
+		goto bad;
 	}
 
 	do {
@@ -2139,6 +2192,23 @@ int parse_key (struct parse *cfile)
 			}
 			if (!parse_semi (cfile))
 				goto rbad;
+			/* If the algorithm name isn't an FQDN, tack on
+			   the .SIG-ALG.REG.NET. domain. */
+			s = strchr (key -> algorithm, '.');
+			if (!s) {
+				static char add [] = ".SIG-ALG.REG.INT.";
+				s = dmalloc (strlen (key -> algorithm) +
+					     sizeof (add), MDL);
+				if (!s) {
+					log_error ("no memory for key %s.",
+						   "algorithm");
+					goto rbad;
+				}
+				strcpy (s, key -> algorithm);
+				strcat (s, add);
+				dfree (key -> algorithm, MDL);
+				key -> algorithm = s;
+			}
 			break;
 
 		      case SECRET:
@@ -2193,6 +2263,7 @@ int parse_key (struct parse *cfile)
 	omapi_auth_key_dereference (&key, MDL);
 	return 0;
 }
+
 /*
  * on-statement :== event-types LBRACE executable-statements RBRACE
  * event-types :== event-type OR event-types |
@@ -3600,43 +3671,67 @@ int parse_non_binary (expr, cfile, lose, context)
 		break;
 		
 	      case NS_NOERROR:
-		known = NOERROR;
+		known = ISC_R_SUCCESS;
 		goto ns_const;
 
 	      case NS_NOTAUTH:
-		known = NOTAUTH;
+		known = ISC_R_NOTAUTH;
 		goto ns_const;
 
 	      case NS_NOTIMP:
-		known = NOTIMP;
+		known = ISC_R_NOTIMPLEMENTED;
 		goto ns_const;
 
 	      case NS_NOTZONE:
-		known = NOTZONE;
+		known = ISC_R_NOTZONE;
 		goto ns_const;
 
 	      case NS_NXDOMAIN:
-		known = NXDOMAIN;
+		known = ISC_R_NXDOMAIN;
 		goto ns_const;
 
 	      case NS_NXRRSET:
-		known = NXRRSET;
+		known = ISC_R_NXRRSET;
 		goto ns_const;
 
 	      case NS_REFUSED:
-		known = REFUSED;
+		known = ISC_R_REFUSED;
 		goto ns_const;
 
 	      case NS_SERVFAIL:
-		known = SERVFAIL;
+		known = ISC_R_SERVFAIL;
 		goto ns_const;
 
 	      case NS_YXDOMAIN:
-		known = YXDOMAIN;
+		known = ISC_R_YXDOMAIN;
 		goto ns_const;
 
 	      case NS_YXRRSET:
-		known = YXRRSET;
+		known = ISC_R_YXRRSET;
+		goto ns_const;
+
+	      case BOOTING:
+		known = S_INIT;
+		goto ns_const;
+
+	      case REBOOT:
+		known = S_REBOOTING;
+		goto ns_const;
+
+	      case SELECT:
+		known = S_SELECTING;
+		goto ns_const;
+
+	      case BOUND:
+		known = S_BOUND;
+		goto ns_const;
+
+	      case RENEW:
+		known = S_RENEWING;
+		goto ns_const;
+
+	      case REBIND:
+		known = S_REBINDING;
 		goto ns_const;
 
 	      case DEFINED:
@@ -3743,7 +3838,9 @@ int parse_expression (expr, cfile, lose, context, plhs, binop)
 	struct expression *rhs = (struct expression *)0, *tmp;
 	struct expression *lhs = (struct expression *)0;
 	enum expr_op next_op;
-	enum expression_context lhs_context, rhs_context;
+	enum expression_context
+		lhs_context = context_any,
+		rhs_context = context_any;
 
 	/* Consume the left hand side we were passed. */
 	if (plhs) {
@@ -3786,62 +3883,94 @@ int parse_expression (expr, cfile, lose, context, plhs, binop)
 			return 0;
 		}
 		next_op = expr_not_equal;
-		lhs_context = rhs_context = context_any;
+		context = expression_context (rhs);
 		break;
 
 	      case EQUAL:
 		next_op = expr_equal;
-		lhs_context = rhs_context = context_any;
+		context = expression_context (rhs);
 		break;
 
 	      case AND:
 		next_op = expr_and;
-		lhs_context = rhs_context = context_boolean;
+		context = expression_context (rhs);
+		if (context != context_boolean) {
+		      needbool:
+			parse_warn (cfile, "expecting boolean expressions");
+			skip_to_semi (cfile);
+			expression_dereference (&rhs, MDL);
+			*lose = 1;
+			return 0;
+		}
 		break;
 
 	      case OR:
 		next_op = expr_or;
-		lhs_context = rhs_context = context_boolean;
+		context = expression_context (rhs);
+		if (context != context_boolean)
+			goto needbool;
 		break;
 
 	      case PLUS:
 		next_op = expr_add;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric) {
+		      neednum:
+			parse_warn (cfile, "expecting numeric expressions");
+			skip_to_semi (cfile);
+			expression_dereference (&rhs, MDL);
+			*lose = 1;
+			return 0;
+		}
 		break;
 
 	      case MINUS:
 		next_op = expr_subtract;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case SLASH:
 		next_op = expr_divide;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case ASTERISK:
 		next_op = expr_multiply;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case PERCENT:
 		next_op = expr_remainder;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case AMPERSAND:
 		next_op = expr_binary_and;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case PIPE:
 		next_op = expr_binary_or;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      case CARET:
 		next_op = expr_binary_xor;
-		lhs_context = rhs_context = context_numeric;
+		context = expression_context (rhs);
+		if (context != context_numeric)
+			goto neednum;
 		break;
 
 	      default:
@@ -3902,62 +4031,6 @@ int parse_expression (expr, cfile, lose, context, plhs, binop)
 		}
 		next_op = expr_none;
 	}
-
-#if defined (NOTYET)		/* Post 3.0 final */
-	/* Make sure rhs and lhs can be combined using binop. */
-	if (!expr_valid_for_context (lhs, lhs_context)) {
-		if (!*lose) {
-			parse_warn (cfile,
-				    "lhs type is not valid for operator.");
-			*lose = 1;
-		}
-	}
-	if (!expr_valid_for_context (rhs, rhs_context) || *lose) {
-		if (!*lose) {
-			parse_warn (cfile,
-				    "lhs type is not valid for operator.");
-			*lose = 1;
-		}
-		return 0;
-	}
-
-	/* Do a little nosing about in comparisons. */
-	if (binop == expr_equal || binop == expr_not_equal) {
-		int lrhs, llhs, crhs, clhs;
-
-		/* If the subexpressions have lengths that are computable
-		   at parse time, see if they're the same, and barf if they
-		   aren't. */
-		clhs = data_subexpression_length (&llhs, lhs);
-		crhs = data_subexpression_length (&lrhs, rhs);
-		if (clhs == 2 || crhs == 2) {
-			if (clhs == crhs &&
-			    (llhs != lrhs ||
-			     (clhs == 2 && llhs > lrhs) ||
-			     (crhs == 2 && lrhs > llhs))) {
-				parse_warn (cfile,
-					    "comparison will always be %s",
-					    (binop == expr_equal ?
-					     "true" : "false"));
-			} else if (llhs != lrhs) {
-				log_error ("warning: %s will normally be %d%s",
-					   (clhs == 1
-					    ? "left-hand side"
-					    : "right-hand side"),
-					   (clhs == 1 ? llhs : lrhs),
-					   " bytes");
-				log_error ("...and %s will always be %d%s",
-					   (clhs == 1
-					    ? "right-hand side"
-					    : "left-hand side"),
-					   (clhs == 1 ? lrhs : llhs),
-					   " bytes");
-				log_error ("so this may not work the way%s",
-					   " you intended");
-			}
-		}
-	}
-#endif /* NOTYET */
 
 	/* Now combine the LHS and the RHS using binop. */
 	tmp = (struct expression *)0;
@@ -4063,7 +4136,7 @@ int parse_option_statement (result, cfile, lookups, option, op)
 				continue;
 			tmp = expr;
 			expr = (struct expression *)0;
-			if (!parse_option_token (&expr, cfile, fmt,
+			if (!parse_option_token (&expr, cfile, &fmt,
 						 tmp, uniform, lookups)) {
 				if (fmt [1] != 'o') {
 					if (tmp)
@@ -4111,7 +4184,7 @@ int parse_option_statement (result, cfile, lookups, option, op)
 int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	struct expression **rv;
 	struct parse *cfile;
-	const char *fmt;
+	const char **fmt;
 	struct expression *expr;
 	int uniform;
 	int lookups;
@@ -4124,12 +4197,14 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	unsigned char *ob;
 	struct iaddr addr;
 	int num;
+	const char *f;
+	struct enumeration_value *e;
 
-	switch (*fmt) {
+	switch (**fmt) {
 	      case 'U':
 		token = peek_token (&val, cfile);
 		if (!is_identifier (token)) {
-			if (fmt [1] != 'o') {
+			if ((*fmt) [1] != 'o') {
 				parse_warn (cfile, "expecting identifier.");
 				skip_to_semi (cfile);
 			}
@@ -4142,8 +4217,8 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 		break;
 
 	      case 'E':
-		fmt = strchr (fmt, '.');
-		if (!fmt) {
+		*fmt = strchr (*fmt, '.');
+		if (!*fmt) {
 			parse_warn (cfile,
 				    "malformed encapsulation format (bug!)");
 			skip_to_semi (cfile);
@@ -4165,7 +4240,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 					      strlen (val), 1, 1))
 				log_fatal ("No memory for \"%s\"", val);
 		} else {
-			if (fmt [1] != 'o') {
+			if ((*fmt) [1] != 'o') {
 				parse_warn (cfile, "expecting string %s.",
 					    "or hexadecimal data");
 				skip_to_semi (cfile);
@@ -4177,7 +4252,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	      case 't': /* Text string... */
 		token = peek_token (&val, cfile);
 		if (token != STRING && !is_identifier (token)) {
-			if (fmt [1] != 'o') {
+			if ((*fmt) [1] != 'o') {
 				parse_warn (cfile, "expecting string.");
 				if (token != SEMI)
 					skip_to_semi (cfile);
@@ -4190,6 +4265,31 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 			log_fatal ("No memory for concatenation");
 		break;
 		
+	      case 'N':
+		f = (*fmt) + 1;
+		*fmt = strchr (*fmt, '.');
+		if (!fmt) {
+			parse_warn (cfile, "malformed %s (bug!)",
+				    "enumeration format");
+		      foo:
+			skip_to_semi (cfile);
+			return 0;
+		}
+		token = next_token (&val, cfile);
+		if (!is_identifier (token)) {
+			parse_warn (cfile,
+				    "identifier expected");
+			goto foo;
+		}
+		e = find_enumeration_value (f, (*fmt) - f, val);
+		if (!e) {
+			parse_warn (cfile, "unknown value");
+			goto foo;
+		}
+		if (!make_const_data (&t, &e -> value, 1, 0, 1))
+			return 0;
+		break;
+
 	      case 'I': /* IP address or hostname. */
 		if (lookups) {
 			if (!parse_ip_addr_or_hostname (&t, cfile, uniform))
@@ -4218,7 +4318,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	      check_number:
 		if (token != NUMBER) {
 		      need_number:
-			if (fmt [1] != 'o') {
+			if ((*fmt) [1] != 'o') {
 				parse_warn (cfile, "expecting number.");
 				if (token != SEMI)
 					skip_to_semi (cfile);
@@ -4256,10 +4356,10 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 	      case 'f': /* Boolean flag. */
 		token = peek_token (&val, cfile);
 		if (!is_identifier (token)) {
-			if (fmt [1] != 'o')
+			if ((*fmt) [1] != 'o')
 				parse_warn (cfile, "expecting identifier.");
 		      bad_flag:
-			if (fmt [1] != 'o') {
+			if ((*fmt) [1] != 'o') {
 				if (token != SEMI)
 					skip_to_semi (cfile);
 			}
@@ -4274,7 +4374,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 		else if (!strcasecmp (val, "ignore"))
 			buf [0] = 2;
 		else {
-			if (fmt [1] != 'o')
+			if ((*fmt) [1] != 'o')
 				parse_warn (cfile, "expecting boolean.");
 			goto bad_flag;
 		}
@@ -4285,7 +4385,7 @@ int parse_option_token (rv, cfile, fmt, expr, uniform, lookups)
 
 	      default:
 		parse_warn (cfile, "Bad format %c in parse_option_token.",
-			    *fmt);
+			    **fmt);
 		skip_to_semi (cfile);
 		return 0;
 	}
@@ -4307,7 +4407,7 @@ int parse_option_decl (oc, cfile)
 	u_int8_t buf [4];
 	u_int8_t hunkbuf [1024];
 	unsigned hunkix = 0;
-	const char *fmt;
+	const char *fmt, *f;
 	struct option *option;
 	struct iaddr ip_addr;
 	u_int8_t *dp;
@@ -4315,6 +4415,7 @@ int parse_option_decl (oc, cfile)
 	int nul_term = 0;
 	struct buffer *bp;
 	int known = 0;
+	struct enumeration_value *e;
 
 	option = parse_option_name (cfile, 0, &known);
 	if (!option)
@@ -4366,6 +4467,33 @@ int parse_option_decl (oc, cfile)
 				nul_term = 1;
 				hunkix += len;
 				break;
+
+			      case 'N':
+				f = fmt;
+				fmt = strchr (fmt, '.');
+				if (!fmt) {
+					parse_warn (cfile,
+						    "malformed %s (bug!)",
+						    "enumeration format");
+				      foo:
+					skip_to_semi (cfile);
+					return 0;
+				}
+				token = next_token (&val, cfile);
+				if (!is_identifier (token)) {
+					parse_warn (cfile,
+						    "identifier expected");
+					goto foo;
+				}
+				e = find_enumeration_value (f, fmt - f, val);
+				if (!e) {
+					parse_warn (cfile,
+						    "unknown value");
+					goto foo;
+				}
+				len = 1;
+				dp = &e -> value;
+				goto alloc;
 
 			      case 'I': /* IP address. */
 				if (!parse_ip_addr (cfile, &ip_addr))

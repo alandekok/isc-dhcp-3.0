@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: execute.c,v 1.41 2000/11/28 22:50:38 mellon Exp $ Copyright (c) 1998-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: execute.c,v 1.44 2001/01/16 22:56:56 mellon Exp $ Copyright (c) 1998-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -224,8 +224,11 @@ int execute_statements (result, packet, lease, client_state,
 			return 1;
 
 		      case supersede_option_statement:
+		      case send_option_statement:
 #if defined (DEBUG_EXPRESSIONS)
-			log_debug ("exec: supersede option %s.%s",
+			log_debug ("exec: %s option %s.%s",
+			      (r -> op == supersede_option_statement
+			       ? "supersede" : "send"),
 			      r -> data.option -> option -> universe -> name,
 			      r -> data.option -> option -> name);
 			goto option_statement;
@@ -445,7 +448,8 @@ int execute_statements (result, packet, lease, client_state,
 			break;
 
 		      default:
-			log_fatal ("bogus statement type %d", r -> op);
+			log_error ("bogus statement type %d", r -> op);
+			break;
 		}
 		executable_statement_dereference (&r, MDL);
 		if (next) {
@@ -626,6 +630,7 @@ int executable_statement_dereference (ptr, file, line)
 		break;
 
 	      case supersede_option_statement:
+	      case send_option_statement:
 	      case default_option_statement:
 	      case append_option_statement:
 	      case prepend_option_statement:
@@ -779,6 +784,7 @@ void write_statements (file, statements, indent)
 			break;
 
 		      case supersede_option_statement:
+		      case send_option_statement:
 			s = "supersede";
 			goto option_statement;
 
@@ -846,6 +852,40 @@ void write_statements (file, statements, indent)
 						  "", "", r -> data.set.name);
 			col = token_print_indent (file, col, indent + 6,
 						  " ", "", ";");
+			break;
+
+		      case log_statement:
+			indent_spaces (file, indent);
+			fprintf (file, "log ");
+			col = token_print_indent (file, col, indent + 4,
+						  "", "", "(");
+			switch (r -> data.log.priority) {
+			case log_priority_fatal:
+				col = token_print_indent
+					(file, col, indent + 4, "",
+					 " ", "fatal,");
+				break;
+			case log_priority_error:
+				col = token_print_indent
+					(file, col, indent + 4, "",
+					 " ", "error,");
+				break;
+			case log_priority_debug:
+				col = token_print_indent
+					(file, col, indent + 4, "",
+					 " ", "debug,");
+				break;
+			case log_priority_info:
+				col = token_print_indent
+					(file, col, indent + 4, "",
+					 " ", "info,");
+				break;
+			}
+			col = write_expression (file, r -> data.log.expr,
+						indent + 4, indent + 4, 0);
+			col = token_print_indent (file, col, indent + 4,
+						  "", "", ");");
+
 			break;
 			
 		      default:
