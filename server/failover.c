@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.36 2001/02/22 07:30:21 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.40 2001/03/16 01:56:32 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -929,9 +929,11 @@ isc_result_t dhcp_failover_listen (omapi_object_t *h)
 	}
 
 	/* Put this listener on the list. */
-	dhcp_failover_listener_reference (&obj -> next,
-					  failover_listeners, MDL);
-	dhcp_failover_listener_dereference (&failover_listeners, MDL);
+	if (failover_listeners) {
+		dhcp_failover_listener_reference (&obj -> next,
+						  failover_listeners, MDL);
+		dhcp_failover_listener_dereference (&failover_listeners, MDL);
+	}
 	dhcp_failover_listener_reference (&failover_listeners, obj, MDL);
 
 	return dhcp_failover_listener_dereference (&obj, MDL);
@@ -2245,9 +2247,61 @@ isc_result_t dhcp_failover_state_set_value (omapi_object_t *h,
 					    omapi_data_string_t *name,
 					    omapi_typed_data_t *value)
 {
+	isc_result_t status;
+
 	if (h -> type != dhcp_type_failover_state)
 		return ISC_R_INVALIDARG;
-	
+
+	/* This list of successful returns is completely wrong, but the
+	   fastest way to make dhcpctl do something vaguely sane when
+	   you try to change the local state. */
+
+	if (!omapi_ds_strcmp (name, "name")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "peer_name")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "partner-address")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "local-address")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "partner-port")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "local-port")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "max-outstanding-updates")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "mclt")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "load-balance-max-secs")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "load-balance-hba")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "partner-state")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "local-state")) {
+		unsigned long l;
+		status = omapi_get_int_value (&l, value);
+		if (status != ISC_R_SUCCESS)
+			return status;
+		return dhcp_failover_set_state ((dhcp_failover_state_t *)h, l);
+	} else if (!omapi_ds_strcmp (name, "partner-stos")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "local-stos")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "hierarchy")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "last-packet-sent")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "last-timestamp-received")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "skew")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "max-response-delay")) {
+		return ISC_R_SUCCESS;
+	} else if (!omapi_ds_strcmp (name, "cur-unacked-updates")) {
+		return ISC_R_SUCCESS;
+	}
+		
 	if (h -> inner && h -> inner -> type -> set_value)
 		return (*(h -> inner -> type -> set_value))
 			(h -> inner, id, name, value);
@@ -4644,7 +4698,11 @@ int lease_mine_to_reallocate (struct lease *lease)
 		}
 		return 0;
 	}
-	return 1;
+	if (lease)
+		return !(lease -> binding_state != FTS_FREE &&
+			 lease -> binding_state != FTS_BACKUP);
+	else
+		return 0;
 }
 
 static isc_result_t failover_message_reference (failover_message_t **mp,

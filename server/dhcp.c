@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.182 2001/02/15 21:34:08 neild Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.185 2001/03/16 01:55:38 mellon Exp $ Copyright (c) 1995-2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -586,7 +586,7 @@ void dhcprelease (packet, ms_nulltp)
 	struct packet *packet;
 	int ms_nulltp;
 {
-	struct lease *lease = (struct lease *)0;
+	struct lease *lease = (struct lease *)0, *next = (struct lease *)0;
 	struct iaddr cip;
 	struct option_cache *oc;
 	struct data_string data;
@@ -619,11 +619,20 @@ void dhcprelease (packet, ms_nulltp)
 		/* See if we can find a lease that matches the IP address
 		   the client is claiming. */
 		for (; lease; lease = lease -> n_uid) {
+			if (lease -> n_uid)
+				lease_reference (&next, lease -> n_uid, MDL);
 			if (!memcmp (&packet -> raw -> ciaddr,
 				     lease -> ip_addr.iabuf, 4)) {
 				break;
 			}
+			lease_dereference (&lease, MDL);
+			if (next) {
+				lease_reference (&lease, next, MDL);
+				lease_dereference (&next, MDL);
+			}
 		}
+		if (next)
+			lease_dereference (&next, MDL);
 	}
 
 	/* The client is supposed to pass a valid client-identifier,
@@ -682,8 +691,8 @@ void dhcprelease (packet, ms_nulltp)
 	/* If we found a lease, release it. */
 	if (lease && lease -> ends > cur_time) {
 		release_lease (lease, packet);
-		log_info ("%s", msgbuf);
-	}
+	} 
+	log_info ("%s", msgbuf);
       out:
 	if (lease)
 		lease_dereference (&lease, MDL);
@@ -855,6 +864,7 @@ void dhcpinform (packet, ms_nulltp)
 	if (!subnet) {
 		log_info ("%s: unknown subnet %s",
 			  msgbuf, inet_ntoa (packet -> raw -> giaddr));
+		return;
 	}
 
 	/* We don't respond to DHCPINFORM packets if we're not authoritative.
@@ -1337,6 +1347,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 {
 	struct lease *lt;
 	struct lease_state *state;
+	struct lease *next;
 	TIME lease_time;
 	TIME offered_lease_time;
 	struct data_string d1;
@@ -1473,27 +1484,35 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					   oc, MDL)) {
 		struct lease *seek;
 		if (lease -> uid_len) {
-			struct lease *s;
 			do {
 				seek = (struct lease *)0;
 				find_lease_by_uid (&seek, lease -> uid,
 						   lease -> uid_len, MDL);
+				if (!seek)
+					break;
 
 				/* Don't release expired leases, and don't
 				   release the lease we're going to assign. */
-				s = seek;
-				while (s) {
-					if (s != lease &&
-					    s -> ends > cur_time)
+				next = (struct lease *)0;
+				while (seek) {
+					if (seek -> n_uid)
+					    lease_reference (&next,
+							     seek -> n_uid,
+							     MDL);
+					if (seek != lease &&
+					    seek -> ends > cur_time)
 						break;
-					s = s -> n_uid;
-				}
-				if (s) {
-					release_lease (s, packet);
-				}
-				if (seek)
 					lease_dereference (&seek, MDL);
-			} while (s);
+					if (next)
+					    lease_reference (&seek, next, MDL);
+				}
+				if (seek) {
+					release_lease (seek, packet);
+					lease_dereference (&seek, MDL);
+				}
+				if (next)
+					lease_dereference (&next, MDL);
+			} while (1);
 		}
 		if (!lease -> uid_len ||
 		    (lease -> host &&
@@ -1506,25 +1525,30 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 						     state -> options,
 						     &lease -> scope,
 						     oc, MDL))) {
-			struct lease *s;
 			do {
 				seek = (struct lease *)0;
 				find_lease_by_hw_addr
 					(&seek, lease -> hardware_addr.hbuf,
 					 lease -> hardware_addr.hlen, MDL);
-				s = seek;
-				while (s) {
-					if (s != lease &&
-					    s -> ends > cur_time)
+				if (!seek)
+					break;
+				next = (struct lease *)0;
+				while (seek) {
+				    if (seek -> n_hw)
+					lease_reference (&next,
+							 seek -> n_hw, MDL);
+					if (seek != lease &&
+					    seek -> ends > cur_time)
 						break;
-					s = s -> n_hw;
-				}
-				if (s) {
-					release_lease (s, packet);
-				}
-				if (seek)
 					lease_dereference (&seek, MDL);
-			} while (s);
+					if (next)
+					    lease_reference (&seek, next, MDL);
+				}
+				if (seek) {
+					release_lease (seek, packet);
+					lease_dereference (&seek, MDL);
+				}
+			} while (1);
 		}
 	}
 	
@@ -1539,9 +1563,11 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					   (struct client_state *)0,
 					   packet -> options, state -> options,
 					   &lease -> scope, oc, MDL)) {
-			if (d1.len && packet -> raw -> secs < d1.data [0]) {
+			if (d1.len &&
+			    ntohs (packet -> raw -> secs) < d1.data [0]) {
 				log_info ("%s: %d secs < %d", msg,
-					  packet -> raw -> secs, d1.data [0]);
+					  ntohs (packet -> raw -> secs),
+					  d1.data [0]);
 				data_string_forget (&d1, MDL);
 				free_lease_state (state, MDL);
 				static_lease_dereference (lease, MDL);
@@ -2733,10 +2759,11 @@ int find_lease (struct lease **lp,
 			      piaddr (fixed_lease -> ip_addr));
 		}
 #endif
-		if (!fixed_lease)	/* Save the host if we found one. */
-			host_reference (&host, hp, MDL);
-		if (hp)
+		if (hp) {
+			if (!fixed_lease) /* Save the host if we found one. */
+				host_reference (&host, hp, MDL);
 			host_dereference (&hp, MDL);
+		}
 
 		find_lease_by_uid (&uid_lease, client_identifier.data,
 				   client_identifier.len, MDL);
@@ -2964,7 +2991,7 @@ int find_lease (struct lease **lp,
 			(ip_lease -> binding_state != FTS_FREE &&
 			 ip_lease -> binding_state != FTS_BACKUP)
 #else
-			!lease_mine_to_reallocate (lease)
+			!lease_mine_to_reallocate (ip_lease)
 #endif
 			) {
 #if defined (DEBUG_FIND_LEASE)
@@ -3177,19 +3204,34 @@ int find_lease (struct lease **lp,
 	/* The lease that matched the hardware address is treated likewise. */
 	if (hw_lease) {
 		if (lease) {
-			if (!packet -> raw -> ciaddr.s_addr &&
-			    packet -> packet_type == DHCPREQUEST)
-				dissociate_lease (hw_lease);
 #if defined (DEBUG_FIND_LEASE)
 			log_info ("not choosing hardware lease.");
 #endif
 		} else {
-			lease_reference (&lease, hw_lease, MDL);
-			if (lease -> host)
-				host_dereference (&lease -> host, MDL);
+			/* We're a little lax here - if the client didn't
+			   send a client identifier and it's a bootp client,
+			   but the lease has a client identifier, we still
+			   let the client have a lease. */
+			if (!hw_lease -> uid_len ||
+			    (have_client_identifier
+			     ? (hw_lease -> uid_len ==
+				client_identifier.len &&
+				!memcmp (hw_lease -> uid,
+					 client_identifier.data,
+					 client_identifier.len))
+			     : packet -> packet_type == 0)) {
+				lease_reference (&lease, hw_lease, MDL);
+				if (lease -> host)
+					host_dereference (&lease -> host, MDL);
 #if defined (DEBUG_FIND_LEASE)
-			log_info ("choosing hardware lease.");
+				log_info ("choosing hardware lease.");
 #endif
+			} else {
+#if defined (DEBUG_FIND_LEASE)
+				log_info ("not choosing hardware lease: %s.",
+					  "uid mismatch");
+#endif
+			}
 		}
 		lease_dereference (&hw_lease, MDL);
 	}

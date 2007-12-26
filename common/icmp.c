@@ -44,7 +44,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: icmp.c,v 1.27 2001/02/17 21:34:50 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: icmp.c,v 1.29 2001/03/14 15:56:27 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -277,11 +277,13 @@ isc_result_t icmp_echoreply (h)
 
 #if defined (TRACING)
 		if (trace_record ()) {
+			ia.len = htonl(ia.len);
 			iov [0].buf = (char *)&ia;
 			iov [0].len = sizeof ia;
 			iov [1].buf = (char *)icbuf;
 			iov [1].len = len;
 			trace_write_packet_iov (trace_icmp_input, 2, iov, MDL);
+			ia.len = ntohl(ia.len);
 		}
 #endif
 		(*state -> icmp_handler) (ia, icbuf, len);
@@ -296,6 +298,7 @@ void trace_icmp_input_input (trace_type_t *ttype, unsigned length, char *buf)
 	unsigned len;
 	u_int8_t *icbuf;
 	ia = (struct iaddr *)buf;
+	ia->len = ntohl(ia->len);
 	icbuf = (u_int8_t *)(ia + 1);
 	if (icmp_state -> icmp_handler)
 		(*icmp_state -> icmp_handler) (*ia, icbuf,
@@ -311,7 +314,7 @@ void trace_icmp_output_input (trace_type_t *ttype, unsigned length, char *buf)
 
 	if (length != (sizeof (*icmp) + (sizeof *ia))) {
 		log_error ("trace_icmp_output_input: data size mismatch %d:%d",
-			   length, (sizeof (*icmp) + (sizeof *ia)));
+			   length, (int)((sizeof (*icmp)) + (sizeof *ia)));
 		return;
 	}
 	ia = (struct iaddr *)buf;
