@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: discover.c,v 1.42.2.17 2005/03/03 16:55:22 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: discover.c,v 1.42.2.19 2005/09/28 18:58:27 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -443,7 +443,6 @@ void discover_interfaces (state)
 						       MDL);
 			if (!tif)
 				log_fatal ("no space to remember ifp.");
-			memset (tif, 0, sizeof (struct ifreq));
 			strcpy (tif -> ifr_name, tmp -> name);
 			tmp -> ifp = tif;
 		}
@@ -462,6 +461,18 @@ void discover_interfaces (state)
 #endif
 #ifdef HAVE_ARPHRD_ROSE
 		      case ARPHRD_ROSE:
+#endif
+#ifdef HAVE_ARPHRD_IRDA
+		     case ARPHRD_IRDA:
+			/* ignore infrared interfaces. */
+#endif
+#ifdef HAVE_ARPHRD_SIT
+		     case ARPHRD_SIT:
+			/* ignore IPv6-in-IPv4 interfaces. */
+#endif
+#ifdef HAVE_ARPHRD_IEEE1394
+		     case ARPHRD_IEEE1394:
+			/* ignore IEEE1394 interfaces. */
 #endif
 #ifdef HAVE_ARPHRD_LOOPBACK
 		      case ARPHRD_LOOPBACK:
@@ -1115,8 +1126,6 @@ void interface_stash (struct interface_info *tptr)
 			       sizeof (struct interface_info *), MDL);
 		if (!vec)
 			return;
-		memset (&vec [interface_max], 0,
-			(sizeof (struct interface_info *)) * delta);
 		interface_max += delta;
 		if (interface_vector) {
 		    memcpy (vec, interface_vector,

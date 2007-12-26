@@ -3,7 +3,7 @@
    Parser for dhclient config and lease files... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: clparse.c,v 1.62.2.7 2004/11/24 17:39:14 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: clparse.c,v 1.62.2.10 2005/10/14 15:34:52 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -128,7 +128,6 @@ isc_result_t read_client_conf ()
 				dmalloc (sizeof (struct client_state), MDL);
 			if (!ip -> client)
 				log_fatal ("no memory for client state.");
-			memset (ip -> client, 0, sizeof *(ip -> client));
 			ip -> client -> interface = ip;
 		}
 
@@ -173,7 +172,6 @@ int read_client_conf_file (const char *name, struct interface_info *ip,
 	status = (cfile -> warnings_occurred
 		  ? ISC_R_BADPARSE
 		  : ISC_R_SUCCESS);
-	close (file);
 	end_parse (&cfile);
 	return status;
 }
@@ -210,7 +208,6 @@ void read_client_leases ()
 
 	} while (1);
 
-	close (file);
 	end_parse (&cfile);
 }
 
@@ -668,7 +665,6 @@ void parse_option_list (cfile, list)
 			ix = 0;
 			for (q = p; q; q = q -> cdr)
 				(*list) [ix++] = (u_int32_t)(long)q -> car;
-			(*list) [ix] = 0;
 		}
 		while (p) {
 			q = p -> cdr;
@@ -774,7 +770,13 @@ int interface_or_dummy (struct interface_info **pi, const char *name)
 		if ((status = interface_allocate (&ip, MDL)) != ISC_R_SUCCESS)
 			log_fatal ("Can't record interface %s: %s",
 				   name, isc_result_totext (status));
-		strcpy (ip -> name, name);
+
+		if (strlen(name) >= sizeof(ip->name)) {
+			interface_dereference(&ip, MDL);
+			return 0;
+		}
+		strcpy(ip->name, name);
+
 		if (dummy_interfaces) {
 			interface_reference (&ip -> next,
 					     dummy_interfaces, MDL);
@@ -798,7 +800,6 @@ void make_client_state (state)
 	*state = ((struct client_state *)dmalloc (sizeof **state, MDL));
 	if (!*state)
 		log_fatal ("no memory for client state\n");
-	memset (*state, 0, sizeof **state);
 }
 
 void make_client_config (client, config)
@@ -847,7 +848,6 @@ void parse_client_lease_statement (cfile, is_static)
 		 dmalloc (sizeof (struct client_lease), MDL));
 	if (!lease)
 		log_fatal ("no memory for lease.\n");
-	memset (lease, 0, sizeof *lease);
 	lease -> is_static = is_static;
 	if (!option_state_allocate (&lease -> options, MDL))
 		log_fatal ("no memory for lease options.\n");
@@ -994,7 +994,8 @@ void parse_client_lease_declaration (cfile, lease, ipp, clientp)
 			skip_to_semi (cfile);
 			break;
 		}
-		interface_or_dummy (ipp, val);
+		if (!interface_or_dummy (ipp, val))
+			log_fatal ("Can't allocate interface %s.", val);
 		break;
 
 	      case NAME:

@@ -3,7 +3,7 @@
    Parser for dhcpd config file... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: confpars.c,v 1.143.2.24 2004/11/24 17:39:18 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: confpars.c,v 1.143.2.28 2005/10/14 15:34:52 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -162,7 +162,6 @@ isc_result_t read_conf_file (const char *filename, struct group *group,
 	new_parse (&cfile, -1, fbuf, ulen, filename, 0); /* XXX */
 #else
 	new_parse (&cfile, file, (char *)0, 0, filename, 0);
-	close (file);
 #endif
 	if (leasep)
 		status = lease_file_subparse (cfile);
@@ -1931,9 +1930,6 @@ int parse_class_declaration (cp, cfile, group, type)
 						 sizeof (struct lease *), MDL);
 				if (!class -> billed_leases)
 					log_fatal ("no memory for billing");
-				memset (class -> billed_leases, 0,
-					(class -> lease_limit *
-					 sizeof class -> billed_leases));
 			}
 			data_string_copy (&class -> hash_string, &data, MDL);
 			if (!pc -> hash &&
@@ -2100,9 +2096,6 @@ int parse_class_declaration (cp, cfile, group, type)
 					 sizeof (struct lease *), MDL);
 			if (!class -> billed_leases)
 				log_fatal ("no memory for billed leases.");
-			memset (class -> billed_leases, 0,
-				(class -> lease_limit *
-				 sizeof class -> billed_leases));
 			have_billing_classes = 1;
 			parse_semi (cfile);
 		} else {
@@ -2372,7 +2365,7 @@ void parse_group_declaration (cfile, group)
 		if (!name)
 			log_fatal ("no memory for group decl name %s", val);
 		strcpy (name, val);
-	}		
+	}
 
 	if (!parse_lbrace (cfile)) {
 		group_dereference (&g, MDL);
@@ -2574,6 +2567,7 @@ int parse_lease_declaration (struct lease **lp, struct parse *cfile)
 		      case TIMESTAMP:
 		      case TSTP:
 		      case TSFP:
+		      case ATSFP:
 		      case CLTT:
 			t = parse_date (cfile);
 			switch (token) {
@@ -2600,6 +2594,11 @@ int parse_lease_declaration (struct lease **lp, struct parse *cfile)
 			      case TSFP:
 				seenbit = 131072;
 				lease -> tsfp = t;
+				break;
+
+			      case ATSFP:
+				seenbit = 262144;
+				lease->atsfp = t;
 				break;
 				
 			      case CLTT:
@@ -2916,7 +2915,6 @@ int parse_lease_declaration (struct lease **lp, struct parse *cfile)
 			    if (!binding)
 				    log_fatal ("No memory for lease %s.",
 					       "binding");
-			    memset (binding, 0, sizeof *binding);
 			    binding -> name =
 				    dmalloc (strlen (val) + 1, MDL);
 			    if (!binding -> name)
@@ -2924,7 +2922,7 @@ int parse_lease_declaration (struct lease **lp, struct parse *cfile)
 					       "name");
 			    strcpy (binding -> name, val);
 			    newbinding = 1;
-			} else  {
+			} else {
 				if (binding -> value)
 				  binding_value_dereference (&binding -> value,
 							   MDL);
