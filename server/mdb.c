@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: mdb.c,v 1.67.2.12 2001/10/30 06:42:00 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: mdb.c,v 1.67.2.14 2002/01/17 18:46:02 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -455,10 +455,11 @@ int find_host_for_network (struct subnet **sp, struct host_decl **host,
 	return 0;
 }
 
-void new_address_range (low, high, subnet, pool)
+void new_address_range (low, high, subnet, pool, lpchain)
 	struct iaddr low, high;
 	struct subnet *subnet;
 	struct pool *pool;
+	struct lease **lpchain;
 {
 	struct lease *address_range, *lp, *plp;
 	struct iaddr net;
@@ -568,6 +569,12 @@ void new_address_range (low, high, subnet, pool)
 			lease_hash_add (lease_ip_addr_hash,
 					lp -> ip_addr.iabuf,
 					lp -> ip_addr.len, lp, MDL);
+		/* Put the lease on the chain for the caller. */
+		if (lpchain) {
+			lease_reference (&lp -> next, *lpchain, MDL);
+			lease_dereference (lpchain, MDL);
+			lease_reference (lpchain, lp, MDL);
+		}
 		lease_dereference (&lp, MDL);
 	}
 }
@@ -1151,8 +1158,19 @@ void make_binding_state_transition (struct lease *lease)
 		if (lease -> on_release)
 			executable_statement_dereference (&lease -> on_release,
 							  MDL);
+		/* Get rid of client-specific bindings that are only
+		   correct when the lease is active. */
 		if (lease -> billing_class)
 			unbill_class (lease, lease -> billing_class);
+		if (lease -> agent_options)
+			option_chain_head_dereference (&lease -> agent_options,
+						       MDL);
+		if (lease -> client_hostname) {
+			dfree (lease -> client_hostname, MDL);
+			lease -> client_hostname = (char *)0;
+		}
+		if (lease -> host)
+			host_dereference (&lease -> host, MDL);
 
 		/* Send the expiry time to the peer. */
 		lease -> tstp = lease -> ends;
@@ -1193,8 +1211,19 @@ void make_binding_state_transition (struct lease *lease)
 			executable_statement_dereference (&lease -> on_expiry,
 							  MDL);
 
+		/* Get rid of client-specific bindings that are only
+		   correct when the lease is active. */
 		if (lease -> billing_class)
 			unbill_class (lease, lease -> billing_class);
+		if (lease -> agent_options)
+			option_chain_head_dereference (&lease -> agent_options,
+						       MDL);
+		if (lease -> client_hostname) {
+			dfree (lease -> client_hostname, MDL);
+			lease -> client_hostname = (char *)0;
+		}
+		if (lease -> host)
+			host_dereference (&lease -> host, MDL);
 
 		/* Send the release time (should be == cur_time) to the
 		   peer. */

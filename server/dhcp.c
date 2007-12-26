@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.17 2001/12/07 21:55:21 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.19 2002/01/17 18:11:37 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -206,8 +206,8 @@ void dhcp (packet)
 	if ((oc = lookup_option (&dhcp_universe, packet -> options,
 				 DHO_HOST_NAME))) {
 		if (!oc -> expression)
-			if (oc -> data.len &&
-			    oc -> data.data [oc -> data.len - 1] == 0) {
+			while (oc -> data.len &&
+			       oc -> data.data [oc -> data.len - 1] == 0) {
 				ms_nulltp = 1;
 				oc -> data.len--;
 			}
@@ -717,7 +717,7 @@ void dhcprelease (packet, ms_nulltp)
 	if (lease &&
 	    (lease -> hardware_addr.hlen != packet -> raw -> hlen + 1 ||
 	     lease -> hardware_addr.hbuf [0] != packet -> raw -> htype ||
-	     memcmp (&lease -> hardware_addr.hbuf [0],
+	     memcmp (&lease -> hardware_addr.hbuf [1],
 		     packet -> raw -> chaddr, packet -> raw -> hlen)))
 		lease_dereference (&lease, MDL);
 
