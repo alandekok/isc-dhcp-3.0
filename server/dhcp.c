@@ -3,39 +3,30 @@
    DHCP Protocol engine. */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
- * All rights reserved.
+ * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 1995-2003 by Internet Software Consortium
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of The Internet Software Consortium nor the names
- *    of its contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * THE SOFTWARE IS PROVIDED "AS IS" AND ISC DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS.  IN NO EVENT SHALL ISC BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+ * OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *
- * THIS SOFTWARE IS PROVIDED BY THE INTERNET SOFTWARE CONSORTIUM AND
- * CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
- * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED.  IN NO EVENT SHALL THE INTERNET SOFTWARE CONSORTIUM OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
- * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
+ *   Internet Systems Consortium, Inc.
+ *   950 Charter Street
+ *   Redwood City, CA 94063
+ *   <info@isc.org>
+ *   http://www.isc.org/
  *
- * This software has been written for the Internet Software Consortium
+ * This software has been written for Internet Systems Consortium
  * by Ted Lemon in cooperation with Vixie Enterprises and Nominum, Inc.
- * To learn more about the Internet Software Consortium, see
+ * To learn more about Internet Systems Consortium, see
  * ``http://www.isc.org/''.  To learn more about Vixie Enterprises,
  * see ``http://www.vix.com''.   To learn more about Nominum, Inc., see
  * ``http://www.nominum.com''.
@@ -43,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.30 2004/01/09 00:41:00 dhankins Exp $ Copyright (c) 1995-2002 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.35 2004/06/17 20:54:40 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -89,13 +80,8 @@ void dhcp (packet)
 		    packet -> packet_type < dhcp_type_name_max - 1) {
 			s = dhcp_type_names [packet -> packet_type - 1];
 		} else {
-#if defined (HAVE_SNPRINTF)
-			snprintf (typebuf, sizeof typebuf,
-				  "type %d", packet -> packet_type);
-#else
-			sprintf (typebuf, 
-				  "type %d", packet -> packet_type);
-#endif
+			/* %Audit% Cannot exceed 28 bytes. %2004.06.17,Safe% */
+			sprintf (typebuf, "type %d", packet -> packet_type);
 			s = typebuf;
 		}
 		
@@ -268,14 +254,19 @@ void dhcpdiscover (packet, ms_nulltp)
 	find_lease (&lease, packet, packet -> shared_network,
 		    0, &allocatedp, (struct lease *)0, MDL);
 
-	if (lease && lease -> client_hostname &&
-	    db_printable (lease -> client_hostname))
-		s = lease -> client_hostname;
-	else
+	if (lease && lease -> client_hostname) {
+		if ((strlen (lease -> client_hostname) <= 64) &&
+		    db_printable (lease -> client_hostname))
+			s = lease -> client_hostname;
+		else
+			s = "Hostname Unsuitable for Printing";
+	} else
 		s = (char *)0;
 
-	/* Say what we're doing... */
-	sprintf (msgbuf, "DHCPDISCOVER from %s %s%s%svia %s",
+	/* %Audit% This is log output. %2004.06.17,Safe%
+	 * If we truncate we hope the user can get a hint from the log.
+	 */
+	snprintf (msgbuf, sizeof msgbuf, "DHCPDISCOVER from %s %s%s%svia %s",
 		 (packet -> raw -> htype
 		  ? print_hw_addr (packet -> raw -> htype,
 				   packet -> raw -> hlen,
@@ -446,10 +437,13 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 	/* XXX consider using allocatedp arg to find_lease to see
 	   XXX that this isn't a compliant DHCPREQUEST. */
 
-	if (lease && lease -> client_hostname &&
-	    db_printable (lease -> client_hostname))
-		s = lease -> client_hostname;
-	else
+	if (lease && lease -> client_hostname) {
+		if ((strlen (lease -> client_hostname) <= 64) &&
+		    db_printable (lease -> client_hostname))
+			s = lease -> client_hostname;
+		else
+			s = "Hostname Unsuitable for Printing";
+	} else
 		s = (char *)0;
 
 	oc = lookup_option (&dhcp_universe, packet -> options,
@@ -463,13 +457,19 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 		sip.len = 4;
 		memcpy (sip.iabuf, data.data, 4);
 		data_string_forget (&data, MDL);
+		/* piaddr() should not return more than a 15 byte string.
+		 * safe.
+		 */
 		sprintf (smbuf, " (%s)", piaddr (sip));
 		have_server_identifier = 1;
 	} else
 		smbuf [0] = 0;
 
-	/* Say what we're doing... */
-	sprintf (msgbuf, "DHCPREQUEST for %s%s from %s %s%s%svia %s",
+	/* %Audit% This is log output. %2004.06.17,Safe%
+	 * If we truncate we hope the user can get a hint from the log.
+	 */
+	snprintf (msgbuf, sizeof msgbuf,
+		 "DHCPREQUEST for %s%s from %s %s%s%svia %s",
 		 piaddr (cip), smbuf,
 		 (packet -> raw -> htype
 		  ? print_hw_addr (packet -> raw -> htype,
@@ -742,17 +742,26 @@ void dhcprelease (packet, ms_nulltp)
 		     packet -> raw -> chaddr, packet -> raw -> hlen)))
 		lease_dereference (&lease, MDL);
 
-	if (lease && lease -> client_hostname &&
-	    db_printable (lease -> client_hostname))
-		s = lease -> client_hostname;
-	else
+	if (lease && lease -> client_hostname) {
+		if ((strlen (lease -> client_hostname) <= 64) &&
+		    db_printable (lease -> client_hostname))
+			s = lease -> client_hostname;
+		else
+			s = "Hostname Unsuitable for Printing";
+	} else
 		s = (char *)0;
 
+	/* %Audit% Cannot exceed 16 bytes. %2004.06.17,Safe%
+	 * We copy this out to stack because we actually want to log two
+	 * inet_ntoa()'s in this message.
+	 */
 	strncpy(cstr, inet_ntoa (packet -> raw -> ciaddr), 15);
 	cstr[15] = '\0';
 
-	/* Say what we're doing... */
-	sprintf (msgbuf,
+	/* %Audit% This is log output. %2004.06.17,Safe%
+	 * If we truncate we hope the user can get a hint from the log.
+	 */
+	snprintf (msgbuf, sizeof msgbuf,
 		 "DHCPRELEASE of %s from %s %s%s%svia %s (%sfound)",
 		 cstr,
 		 (packet -> raw -> htype
@@ -830,13 +839,20 @@ void dhcpdecline (packet, ms_nulltp)
 	data_string_forget (&data, MDL);
 	find_lease_by_ip_addr (&lease, cip, MDL);
 
-	if (lease && lease -> client_hostname &&
-	    db_printable (lease -> client_hostname))
-		s = lease -> client_hostname;
-	else
+	if (lease && lease -> client_hostname) {
+		if ((strlen (lease -> client_hostname) <= 64) &&
+		    db_printable (lease -> client_hostname))
+			s = lease -> client_hostname;
+		else
+			s = "Hostname Unsuitable for Printing";
+	} else
 		s = (char *)0;
 
-	sprintf (msgbuf, "DHCPDECLINE of %s from %s %s%s%svia %s",
+	/* %Audit% This is log output. %2004.06.17,Safe%
+	 * If we truncate we hope the user can get a hint from the log.
+	 */
+	snprintf (msgbuf, sizeof msgbuf,
+		 "DHCPDECLINE of %s from %s %s%s%svia %s",
 		 piaddr (cip),
 		 (packet -> raw -> htype
 		  ? print_hw_addr (packet -> raw -> htype,
@@ -947,7 +963,10 @@ void dhcpinform (packet, ms_nulltp)
 		memcpy (cip.iabuf, &packet -> raw -> ciaddr, 4);
 	}
 
-	sprintf (msgbuf, "DHCPINFORM from %s via %s",
+	/* %Audit% This is log output. %2004.06.17,Safe%
+	 * If we truncate we hope the user can get a hint from the log.
+	 */
+	snprintf (msgbuf, sizeof msgbuf, "DHCPINFORM from %s via %s",
 		 piaddr (cip), packet -> interface -> name);
 
 	/* If the IP source address is zero, don't respond. */
@@ -2748,10 +2767,13 @@ void dhcp_reply (lease)
 	raw.hops = state -> hops;
 	raw.op = BOOTREPLY;
 
-	if (lease -> client_hostname &&
-	    db_printable (lease -> client_hostname))
-		s = lease -> client_hostname;
-	else
+	if (lease -> client_hostname) {
+		if ((strlen (lease -> client_hostname) <= 64) &&
+		    db_printable (lease -> client_hostname))
+			s = lease -> client_hostname;
+		else
+			s = "Hostname Unsuitable for Printing";
+	} else
 		s = (char *)0;
 
 	/* Say what we're doing... */

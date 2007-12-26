@@ -1,6 +1,6 @@
-	    Internet Software Consortium DHCP Distribution
-			   Version 3.0.1rc13
-			   February 04, 2004
+	      Internet Systems Consortium DHCP Distribution
+			   Version 3.0.1rc14
+			     June 09, 2004
 
 			     Release Notes
 
@@ -42,6 +42,30 @@ Measurement Systems, Igor Sharfmesser at Kazakh Telecom, and Brian
 Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
+
+			Changes since 3.0.1rc13
+
+! CAN-2004-0460 - CERT VU#317350: Five stack overflow exploits were closed
+  in logging messages with excessively long hostnames provided by the
+  clients.  It is highly probable that these could have been used by
+  attackers to gain arbitrary root access on systems using ISC DHCP 3.0.1
+  release candidates 12 or 13.  Special thanks to Gregory Duchemin for
+  both finding and solving the problem.
+
+! CAN-2004-0461 - CERT VU#654390: Once the above was closed, an opening
+  in log_*() functions was evidented, on some specific platforms where
+  vsnprintf() was not believed to be available and calls were wrapped to
+  sprintf() instead.  Again, credit goes to Gregory Duchemin for finding
+  the problem.  Calls to snprintf() are now linked to a distribution-local
+  snprintf implementation, only in those cases where the architecture is
+  not known to provide one (see includes/cf/[arch].h).  If you experience
+  linking problems with snprintf/vsnprintf or 'isc_print_' functions, this
+  is where to look.  This vulnerability did not exist in any previously
+  published version of ISC DHCP.
+
+- Compilation on hpux 11.11 was repaired.
+
+- 'The cross-compile bug fix' was backed out.
 
 			Changes since 3.0.1rc12
 
