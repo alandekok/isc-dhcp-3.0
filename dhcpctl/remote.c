@@ -3,7 +3,7 @@
    The dhcpctl remote object. */
 
 /*
- * Copyright (c) 1999-2000 Internet Software Consortium.
+ * Copyright (c) 1999-2003 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -248,9 +248,16 @@ dhcpctl_status dhcpctl_open_object (dhcpctl_handle h,
 		omapi_object_dereference (&message, MDL);
 		return status;
 	}
-	return omapi_protocol_send_message (connection -> outer,
+
+	status = omapi_protocol_send_message (connection -> outer,
 					    (omapi_object_t *)0,
 					    message, (omapi_object_t *)0);
+
+	if (status != ISC_R_SUCCESS)
+		omapi_message_unregister (message);
+
+	omapi_object_dereference (&message, MDL);
+	return status;
 }
 
 /* Callback methods (not meant to be called directly) */

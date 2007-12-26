@@ -3,7 +3,7 @@
    Tables of information only used by server... */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
+ * Copyright (c) 1995-2003 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: stables.c,v 1.25.2.6 2002/11/03 04:38:58 dhankins Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: stables.c,v 1.25.2.10 2003/01/14 23:20:35 dhankins Exp $ Copyright (c) 1995-2003 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -464,9 +464,9 @@ struct option server_options [256] = {
 	{ "server-name", "t",				&server_universe, 16 },
 	{ "next-server", "I",				&server_universe, 17 },
 	{ "authoritative", "f",				&server_universe, 18 },
-	{ "vendor-unknown-space", "U",			&server_universe, 19 },
+	{ "vendor-option-space", "U",			&server_universe, 19 },
 	{ "always-reply-rfc1048", "f",			&server_universe, 20 },
-	{ "site-unknown-space", "X",			&server_universe, 21 },
+	{ "site-option-space", "X",			&server_universe, 21 },
 	{ "always-broadcast", "f",			&server_universe, 22 },
 	{ "ddns-domainname", "t",			&server_universe, 23 },
 	{ "ddns-hostname", "t",				&server_universe, 24 },

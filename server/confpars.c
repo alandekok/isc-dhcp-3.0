@@ -3,7 +3,7 @@
    Parser for dhcpd config file... */
 
 /*
- * Copyright (c) 1995-2002 Internet Software Consortium.
+ * Copyright (c) 1995-2003 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: confpars.c,v 1.143.2.16 2002/11/04 00:46:50 dhankins Exp $ Copyright (c) 1995-2002 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: confpars.c,v 1.143.2.19 2003/01/14 23:15:24 dhankins Exp $ Copyright (c) 1995-2003 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -977,7 +977,19 @@ void parse_failover_peer (cfile, group, type)
 			return;
 		}
 	} while (token != RBRACE);
-		
+
+	/* me.address can be null; the failover link initiate code tries to
+	 * derive a reasonable address to use.
+	 */
+	if (!peer -> partner.address)
+		parse_warn (cfile, "peer address may not be omitted");
+
+	/* XXX - when/if we get a port number assigned, just set as default */
+	if (!peer -> me.port)
+		parse_warn (cfile, "local port may not be omitted");
+	if (!peer -> partner.port)
+		parse_warn (cfile, "peer port may not be omitted");
+
 	if (peer -> i_am == primary) {
 	    if (!peer -> hba) {
 		parse_warn (cfile,
