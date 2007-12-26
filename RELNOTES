@@ -1,10 +1,10 @@
 	      Internet Systems Consortium DHCP Distribution
-			     Version 3.0.4
-			     April 27, 2006
+			    Version 3.0.5b1
+			     July 20, 2006
 
 			     Release Notes
 
-			     NEW FEATURES
+		     IMPORTANT NEWS IN THIS RELEASE
 
 FAILOVER:  As of version 3.0.4, ISC has included a fix for an insidious
 bug in the failover implementation which, if left unchecked, could result
@@ -43,6 +43,8 @@ successfully start:
 
 	grep -v '^  atsfp ' /var/db/dhcpd.leases
 
+			     NEW FEATURES
+
 Version 3 of the ISC DHCP Distribution includes the following features
 that are new since version 2.0:
 
@@ -58,10 +60,6 @@ that are new since version 2.0:
      - Dynamic DNS updates
      - Many bug fixes, performance enhancements, and minor new DHCP
        protocol features. 
-
-The main bug fixed here is a bug in the subclass allocation code that
-could result in a memory smash.   Any users of the ISC DHCP server who
-are using subclasses should seriously consider upgrading to 3.0.1.
 
 If you are running 3.0 beta 1 and are doing dynamic DNS updates, the
 lease file is no longer forward-compatible to 3.0 final.   A script
@@ -80,6 +78,61 @@ Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
 
+
+			Changes since 3.0.4
+
+- A warning that host statements declared within subnet or shared-network
+  scopes are actually global has been added.
+
+- The default minimum lease time (if min-lease-time was not specified)
+  was raised from 0 to 300.  0 is not thought to be sensible, and is
+  known to be damaging.
+
+- Added additional fatal error sanity checks surrounding lease binding
+  state count calculations (free/active counts used for failover pool
+  balancing).
+
+- Some time value size fixes in 3.0.4 brought on from FreeBSD /usr/ports were
+  misapplied to server values rather than client values.  The server no longer
+  advertises 8-byte lease-time options when on 64-bit platforms.
+
+- A bug where leases not in ACTIVE state would get billed to billed classes
+  (classes with lease limitations) was fixed.  Non-active leases OFFERed
+  to clients are no longer billed (but billing is checked before offering).
+
+- The dhcpd.conf.5 manpage was updated in regard to the ddns-domainname
+  configuration option - the default configuration and results should be
+  more clear now.
+
+- If the dhclient were to receive a DHCPNAK while it was in the RENEW
+  state (and consequently, had an active, 'bound' address and related
+  configuration options), it would fail to 'tear down' this information
+  before proceeding into INIT state.  dhclient now iterates the dhclient-
+  script with the 'EXPIRE' action to cause these teardowns prior to entering
+  INIT state.  Thanks to a patch from Chris Zimmerman.
+
+- The omapi.1 manpage had some formatting errors repaired thanks to a patch
+  from Yoshihiko Sarumaru.
+
+- A few lines of code that were failover-specific were moved within
+  #if defined() clauses so that compilation without failover could be
+  made possible.
+
+- The log message emitted when the 'leased-address' value was not available
+  in dhcpd.conf "executable statements" has been updated to be more helpful.
+  Manpage information for this value has also been updated.
+
+- Abandoned or dissociated (err condition) leases now remove any related
+  dynamic dns bindings.  Thanks to a patch from Patrick Schoo.
+
+- Attempting to write a new lease file to replace a corrupt (due to
+  encountering non-retryable errors during writing) lease file should
+  no longer result in an infinite recursion.
+
+- Host declaration hardware addresses and client identifiers may only be
+  configured once.  dhcpd will now fail to load config files that specify
+  multiple identifiers (previous versions would silently over-ride the
+  value with the later configured value).
 
 			Changes since 3.0.4rc1
 

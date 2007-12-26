@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: mdb.c,v 1.67.2.25 2005/10/10 16:56:47 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: mdb.c,v 1.67.2.27 2006/07/18 18:16:25 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1031,14 +1031,13 @@ int supersede_lease (comp, lease, commit, propogate, pimmediate)
 	}
 
 	if (!lp) {
-		log_error ("Lease with binding state %s not on its queue.",
-			   (comp -> binding_state < 1 ||
-			    comp -> binding_state > FTS_LAST)
-			   ? "unknown"
-			   : binding_state_names [comp -> binding_state - 1]);
-		return 0;
+		log_fatal("Lease with binding state %s not on its queue.",
+			  (comp->binding_state < 1 ||
+			   comp->binding_state > FTS_LAST)
+			  ? "unknown"
+			  : binding_state_names[comp->binding_state - 1]);
 	}
-	
+
 	if (prev) {
 		lease_dereference (&prev -> next, MDL);
 		if (comp -> next) {
@@ -1412,6 +1411,9 @@ void abandon_lease (lease, message)
 	const char *message;
 {
 	struct lease *lt = (struct lease *)0;
+#if defined (NSUPDATE)
+	ddns_removals (lease);
+#endif
 
 	if (!lease_copy (&lt, lease, MDL))
 		return;
@@ -1441,6 +1443,9 @@ void dissociate_lease (lease)
 	struct lease *lease;
 {
 	struct lease *lt = (struct lease *)0;
+#if defined (NSUPDATE)
+	ddns_removals (lease);
+#endif
 
 	if (!lease_copy (&lt, lease, MDL))
 		return;
@@ -2037,10 +2042,19 @@ void expire_all_pools ()
 		    for (l = *(lptr [i]); l; l = l -> next) {
 			p -> lease_count++;
 			if (l -> ends <= cur_time) {
-				if (l -> binding_state == FTS_FREE)
-					p -> free_leases++;
-				else if (l -> binding_state == FTS_BACKUP)
-					p -> backup_leases++;
+				if (l->binding_state == FTS_FREE) {
+					if (i == FREE_LEASES)
+						p->free_leases++;
+					else
+						log_fatal("Impossible case "
+							  "at %s:%d.", MDL);
+				} else if (l->binding_state == FTS_BACKUP) {
+					if (i == BACKUP_LEASES)
+						p->backup_leases++;
+					else
+						log_fatal("Impossible case "
+							  "at %s:%d.", MDL);
+				}
 			}
 #if defined (FAILOVER_PROTOCOL)
 			if (p -> failover_peer &&

@@ -339,7 +339,7 @@ struct lease_state {
 	struct option_state *options;
 	struct data_string parameter_request_list;
 	int max_message_size;
-	TIME expiry, renewal, rebind;
+	unsigned char expiry[4], renewal[4], rebind[4];
 	struct data_string filename, server_name;
 	int got_requested_address;
 	int got_server_identifier;
@@ -431,7 +431,7 @@ struct lease_state {
 #endif
 
 #if !defined (DEFAULT_MIN_LEASE_TIME)
-# define DEFAULT_MIN_LEASE_TIME 0
+# define DEFAULT_MIN_LEASE_TIME 300
 #endif
 
 #if !defined (DEFAULT_MAX_LEASE_TIME)

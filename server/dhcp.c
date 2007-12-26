@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.61 2006/02/22 22:43:27 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.64 2006/07/17 09:17:19 shane Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1906,6 +1906,19 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 					return;
 				}
 			}
+
+			/* If this is an offer, undo the billing.  We go
+			 * through all the steps above to bill a class so
+			 * we can hit the 'no available billing' mark and
+			 * abort without offering.  But it just doesn't make
+			 * sense to permanently bill a class for a non-active
+			 * lease.  This means on REQUEST, we will bill this
+			 * lease again (if there is a REQUEST).
+			 */
+			if (offer == DHCPOFFER &&
+			    lease->billing_class != NULL &&
+			    lease->binding_state != FTS_ACTIVE)
+				unbill_class(lease, lease->billing_class);
 		}
 	}
 
@@ -2442,18 +2455,15 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 		offered_lease_time =
 			state -> offered_expiry - cur_time;
 
-		putULong ((unsigned char *)&state -> expiry,
-			  (unsigned long)offered_lease_time);
+		putULong(state->expiry, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_LEASE_TIME;
 		if (lookup_option (&dhcp_universe, state -> options, i))
 			log_error ("dhcp-lease-time option for %s overridden.",
 			      inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
-			if (make_const_data (&oc -> expression,
-					     (unsigned char *)&state -> expiry,
-					     sizeof state -> expiry,
-					     0, 0, MDL)) {
+			if (make_const_data(&oc->expression, state->expiry,
+					    4, 0, 0, MDL)) {
 				oc -> option = dhcp_universe.options [i];
 				save_option (&dhcp_universe,
 					     state -> options, oc);
@@ -2463,19 +2473,15 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 
 		/* Renewal time is lease time * 0.5. */
 		offered_lease_time /= 2;
-		putULong ((unsigned char *)&state -> renewal,
-			  (unsigned long)offered_lease_time);
+		putULong(state->renewal, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_RENEWAL_TIME;
 		if (lookup_option (&dhcp_universe, state -> options, i))
 			log_error ("overriding dhcp-renewal-time for %s.",
 				   inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
-			if (make_const_data (&oc -> expression,
-					     (unsigned char *)
-					     &state -> renewal,
-					     sizeof state -> renewal,
-					     0, 0, MDL)) {
+			if (make_const_data(&oc->expression, state->renewal,
+					    4, 0, 0, MDL)) {
 				oc -> option = dhcp_universe.options [i];
 				save_option (&dhcp_universe,
 					     state -> options, oc);
@@ -2486,18 +2492,15 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 		/* Rebinding time is lease time * 0.875. */
 		offered_lease_time += (offered_lease_time / 2
 				       + offered_lease_time / 4);
-		putULong ((unsigned char *)&state -> rebind,
-			  (unsigned)offered_lease_time);
+		putULong(state->rebind, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_REBINDING_TIME;
 		if (lookup_option (&dhcp_universe, state -> options, i))
 			log_error ("overriding dhcp-rebinding-time for %s.",
 			      inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
-			if (make_const_data (&oc -> expression,
-					     (unsigned char *)&state -> rebind,
-					     sizeof state -> rebind,
-					     0, 0, MDL)) {
+			if (make_const_data(&oc->expression, state->rebind,
+					    4, 0, 0, MDL)) {
 				oc -> option = dhcp_universe.options [i];
 				save_option (&dhcp_universe,
 					     state -> options, oc);
