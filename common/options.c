@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: options.c,v 1.81 2001/01/25 08:21:59 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: options.c,v 1.83 2001/01/26 06:17:01 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #define DHCP_OPTION_DATA
@@ -1263,6 +1263,8 @@ struct option_cache *lookup_option (universe, options, code)
 	struct option_state *options;
 	unsigned code;
 {
+	if (!options)
+		return (struct option_cache *)0;
 	if (universe -> lookup_func)
 		return (*universe -> lookup_func) (universe, options, code);
 	else
@@ -1930,10 +1932,12 @@ void save_linked_option (universe, options, oc)
 	head = ((struct option_chain_head *)
 		options -> universes [universe -> index]);
 	if (!head) {
-		if (!option_chain_head_allocate (&head, MDL))
+		if (!option_chain_head_allocate (((struct option_chain_head **)
+						  &options -> universes
+						  [universe -> index]), MDL))
 			return;
-		((struct option_chain_head *)
-		 options -> universes [universe -> index]) = head;
+		head = ((struct option_chain_head *)
+			options -> universes [universe -> index]);
 	}
 
 	/* Find the tail of the list. */
