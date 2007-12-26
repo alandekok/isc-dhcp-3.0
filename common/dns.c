@@ -42,7 +42,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dns.c,v 1.35.2.8 2001/10/17 03:24:49 mellon Exp $ Copyright (c) 2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dns.c,v 1.35.2.10 2001/10/26 21:26:39 mellon Exp $ Copyright (c) 2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -258,7 +258,7 @@ int dns_zone_dereference (ptr, file, line)
 	dns_zone = *ptr;
 	*ptr = (struct dns_zone *)0;
 	--dns_zone -> refcnt;
-	rc_register (file, line, ptr, dns_zone, dns_zone -> refcnt, 1);
+	rc_register (file, line, ptr, dns_zone, dns_zone -> refcnt, 1, RC_MISC);
 	if (dns_zone -> refcnt > 0)
 		return 1;
 
@@ -863,8 +863,13 @@ isc_result_t ddns_remove_a (struct data_string *ddns_fwd_name,
 	 *   -- "Interaction between DHCP and DNS"
 	 */
 
-	if (result != ISC_R_SUCCESS)
+	if (result != ISC_R_SUCCESS) {
+		/* If the rrset isn't there, we didn't need to do the
+		   delete, which is success. */
+		if (result == ISC_R_NXRRSET || result == ISC_R_NXDOMAIN)
+			result = ISC_R_SUCCESS;	
 		goto error;
+	}
 
 	while (!ISC_LIST_EMPTY (updqueue)) {
 		updrec = ISC_LIST_HEAD (updqueue);

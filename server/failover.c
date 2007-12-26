@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.53.2.15 2001/10/17 03:31:02 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.21 2001/11/02 01:01:16 mellon Exp $ Copyright (c) 1999-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1582,7 +1582,6 @@ isc_result_t dhcp_failover_set_service_state (dhcp_failover_state_t *state)
 	if (state -> service_state != not_responding) {
 		switch (state -> partner.state) {
 		      case partner_down:
-		      case recover:
 			state -> service_state = not_responding;
 			state -> nrr = " (recovering)";
 			break;
@@ -1811,7 +1810,6 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 		      case unknown_state:
 		      case normal:
 		      case potential_conflict:
-		      case recover:
 		      case recover_done:
 		      case shut_down:
 		      case paused:
@@ -1823,6 +1821,7 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 		      case partner_down:
 		      case communications_interrupted:
 		      case resolution_interrupted:
+		      case recover:
 			break;
 		}
 	}
@@ -2147,6 +2146,7 @@ int dhcp_failover_pool_rebalance (dhcp_failover_state_t *state)
 	binding_state_t peer_lease_state;
 	binding_state_t my_lease_state;
 	struct lease **lq;
+	int tenper;
 
 	if (state -> me.state != normal || state -> i_am == secondary)
 		return 0;
@@ -2174,11 +2174,16 @@ int dhcp_failover_pool_rebalance (dhcp_failover_state_t *state)
 			lq = &p -> backup;
 		}
 
-		log_info ("pool %lx total %d  free %d  backup %d  lts %d",
-			  (unsigned long)p, p -> lease_count,
-			  p -> free_leases, p -> backup_leases, lts);
+		tenper = (p -> backup_leases + p -> free_leases) / 10;
+		if (tenper == 0)
+			tenper = 1;
+		if (lts > tenper) {
+		    log_info ("pool %lx %s  total %d  free %d  %s %d  lts %d",
+			  (unsigned long)p,
+			  (p -> shared_network ?
+			   p -> shared_network -> name : ""), p -> lease_count,
+			  p -> free_leases, p -> backup_leases, "backup", lts);
 
-		if (lts > 1) {
 		    lease_reference (&lp, *lq, MDL);
 
 		    while (lp && lts) {
@@ -2227,9 +2232,12 @@ int dhcp_failover_pool_check (struct pool *pool)
 {
 	int lts;
 	struct lease *lp;
+	int tenper;
 
+	/* According to the draft, only the secondary ever sends a pool
+	   request, but this doesn't really make a lot of sense. */
 	if (!pool -> failover_peer ||
-	    pool -> failover_peer -> i_am == primary ||
+/*	    pool -> failover_peer -> i_am == primary || */
 	    pool -> failover_peer -> me.state != normal)
 		return 0;
 
@@ -2238,11 +2246,16 @@ int dhcp_failover_pool_check (struct pool *pool)
 	else
 		lts = (pool -> free_leases - pool -> backup_leases) / 2;
 
-	log_info ("pool %lx total %d  free %d  backup %d  lts %d",
-		  (unsigned long)pool, pool -> lease_count,
+	log_info ("pool %lx %s total %d  free %d  backup %d  lts %d",
+		  (unsigned long)pool,
+		  pool -> shared_network ? pool -> shared_network -> name : "",
+		  pool -> lease_count,
 		  pool -> free_leases, pool -> backup_leases, lts);
 
-	if (lts > 1) {
+	tenper = (pool -> backup_leases + pool -> free_leases) / 10;
+	if (tenper == 0)
+		tenper = 1;
+	if (lts > tenper) {
 		/* XXX What about multiple pools? */
 		dhcp_failover_send_poolreq (pool -> failover_peer);
 		return 1;
@@ -4271,6 +4284,7 @@ isc_result_t dhcp_failover_send_update_request (dhcp_failover_state_t *state)
 		log_debug ("%s", obuf);
 	}
 #endif
+	log_info ("Sent update request message to %s", state -> name);
 	return status;
 }
 
@@ -4310,6 +4324,7 @@ isc_result_t dhcp_failover_send_update_request_all (dhcp_failover_state_t
 		log_debug ("%s", obuf);
 	}
 #endif
+	log_info ("Sent update request all message to %s", state -> name);
 	return status;
 }
 
@@ -4348,6 +4363,8 @@ isc_result_t dhcp_failover_send_update_done (dhcp_failover_state_t *state)
 		log_debug ("%s", obuf);
 	}
 #endif
+
+	log_info ("Sent update done message to %s", state -> name);
 
 	/* There may be uncommitted leases at this point (since
 	   dhcp_failover_process_bind_ack() doesn't commit leases);
@@ -4638,6 +4655,7 @@ isc_result_t dhcp_failover_generate_update_queue (dhcp_failover_state_t *state,
 	}
 	if (state -> send_update_done)
 		lease_dereference (&state -> send_update_done, MDL);
+	state -> cur_unacked_updates = 0;
 			
 	/* Loop through each pool in each shared network and call the
 	   expiry routine on the pool. */
@@ -4679,10 +4697,14 @@ dhcp_failover_process_update_request (dhcp_failover_state_t *state,
 		lease_reference (&state -> send_update_done,
 				 state -> update_queue_tail, MDL);
 		dhcp_failover_send_updates (state);
+		log_info ("Update request from %s: sending update",
+			   state -> name);
 	} else {
 		/* Otherwise, there are no updates to send, so we can
 		   just send an UPDDONE message immediately. */
 		dhcp_failover_send_update_done (state);
+		log_info ("Update request from %s: nothing pending",
+			   state -> name);
 	}
 
 	return ISC_R_SUCCESS;
@@ -4699,10 +4721,14 @@ dhcp_failover_process_update_request_all (dhcp_failover_state_t *state,
 		lease_reference (&state -> send_update_done,
 				 state -> update_queue_tail, MDL);
 		dhcp_failover_send_updates (state);
+		log_info ("Update request all from %s: sending update",
+			   state -> name);
 	} else {
 		/* This should really never happen, but it could happen
 		   on a server that currently has no leases configured. */
 		dhcp_failover_send_update_done (state);
+		log_info ("Update request all from %s: nothing pending",
+			   state -> name);
 	}
 
 	return ISC_R_SUCCESS;
