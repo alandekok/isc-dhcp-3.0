@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: print.c,v 1.53.2.1 2001/05/31 19:29:39 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: print.c,v 1.53.2.3 2001/06/12 18:47:47 mellon Exp $ Copyright (c) 1995-2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -122,6 +122,56 @@ char *quotify_buf (const unsigned char *s, unsigned len,
 		*nsp++ = 0;
 	}
 	return buf;
+}
+
+char *print_base64 (const unsigned char *buf, unsigned len,
+		    const char *file, int line)
+{
+	char *s, *b;
+	unsigned bl;
+	int i;
+	unsigned val, extra;
+	static char to64 [] =
+	   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+	bl = ((len * 4 + 2) / 3) + 1;
+	b = dmalloc (bl + 1, file, line);
+	if (!b)
+		return (char *)0;
+	
+	i = 0;
+	s = b;
+	while (i != len) {
+		val = buf [i++];
+		extra = val & 3;
+		val = val >> 2;
+		*s++ = to64 [val];
+		if (i == len) {
+			*s++ = to64 [extra << 4];
+			*s++ = '=';
+			break;
+		}
+		val = (extra << 8) + buf [i++];
+		extra = val & 15;
+		val = val >> 4;
+		*s++ = to64 [val];
+		if (i == len) {
+			*s++ = to64 [extra << 2];
+			*s++ = '=';
+			break;
+		}
+		val = (extra << 8) + buf [i++];
+		extra = val & 0x3f;
+		val = val >> 6;
+		*s++ = to64 [val];
+		*s++ = to64 [extra];
+	}
+	if (!len)
+		*s++ = '=';
+	*s++ = 0;
+	if (s > b + bl + 1)
+		abort ();
+	return b;
 }
 
 char *print_hw_addr (htype, hlen, data)

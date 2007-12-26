@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhcpd.c,v 1.115.2.3 2001/06/04 21:32:49 mellon Exp $ Copyright 1995-2001 Internet Software Consortium.";
+"$Id: dhcpd.c,v 1.115.2.6 2001/06/22 02:12:58 mellon Exp $ Copyright 1995-2001 Internet Software Consortium.";
 #endif
 
   static char copyright[] =
@@ -201,6 +201,7 @@ static void omapi_listener_start (void *foo)
 			   isc_result_totext (result));
 		add_timeout (cur_time + 5, omapi_listener_start, 0, 0, 0);
 	}
+	omapi_object_dereference (&listener, MDL);
 }
 
 int main (argc, argv, envp)
@@ -482,6 +483,13 @@ int main (argc, argv, envp)
 		    log_fatal ("   lease file when playing back a trace. **");
 	    }		
 	    trace_file_replay (traceinfile);
+
+#if defined (DEBUG_MEMORY_LEAKAGE) || \
+                defined (DEBUG_MEMORY_LEAKAGE_ON_EXIT)
+            free_everything ();
+            omapi_print_dmalloc_usage_by_caller (); 
+#endif
+
 	    exit (0);
 	}
 #endif
@@ -524,16 +532,7 @@ int main (argc, argv, envp)
 #if defined (TRACING)
 	trace_seed_stash (trace_srandom, seed + cur_time);
 #endif
-
-	/* Start up a listener for the object management API protocol. */
-	if (omapi_port != -1) {
-		omapi_listener_start (0);
-	}
-
-#if defined (FAILOVER_PROTOCOL)
-	/* Start the failover protocol. */
-	dhcp_failover_startup ();
-#endif
+	postdb_startup ();
 
 #ifndef DEBUG
 	if (daemon) {
@@ -597,7 +596,8 @@ int main (argc, argv, envp)
 	}
 #endif /* !DEBUG */
 
-#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL) || \
+		defined (DEBUG_MEMORY_LEAKAGE_ON_EXIT)
 	dmalloc_cutoff_generation = dmalloc_generation;
 	dmalloc_longterm = dmalloc_outstanding;
 	dmalloc_outstanding = 0;
@@ -865,6 +865,19 @@ void postconf_initialization (int quiet)
 #endif
 }
 
+void postdb_startup (void)
+{
+	/* Initialize the omapi listener state. */
+	if (omapi_port != -1) {
+		omapi_listener_start (0);
+	}
+
+#if defined (FAILOVER_PROTOCOL)
+	/* Initialize the failover listener state. */
+	dhcp_failover_startup ();
+#endif
+}
+
 /* Print usage message. */
 
 static void usage ()
@@ -951,7 +964,7 @@ void lease_ping_timeout (vlp)
 		  dmalloc_outstanding - previous_outstanding,
 		  dmalloc_outstanding, dmalloc_longterm);
 #endif
-#if defined (DEBUG_MEMORY_LEAKAGE) || defined (DEBUG_MALLOC_POOL)
+#if defined (DEBUG_MEMORY_LEAKAGE)
 	dmalloc_dump_outstanding ();
 #endif
 }
@@ -983,7 +996,7 @@ int dhcpd_interface_setup_hook (struct interface_info *ip, struct iaddr *ia)
 		/* If this interface has multiple aliases on the same
 		   subnet, ignore all but the first we encounter. */
 		if (!subnet -> interface) {
-			subnet -> interface = ip;
+			interface_reference (&subnet -> interface, ip, MDL);
 			subnet -> interface_address = *ia;
 		} else if (subnet -> interface != ip) {
 			log_error ("Multiple interfaces match the %s: %s %s", 
@@ -1008,21 +1021,16 @@ int dhcpd_interface_setup_hook (struct interface_info *ip, struct iaddr *ia)
 				   "same shared network",
 				   share -> interface -> name, ip -> name);
 		}
+		subnet_dereference (&subnet, MDL);
 	}
 	return 1;
 }
 
 static TIME shutdown_time;
 static int omapi_connection_count;
-static enum  {
-	shutdown_listeners,
-	shutdown_omapi_connections,
-	shutdown_drop_omapi_connections,
-	shutdown_dhcp,
-	shutdown_done
-} shutdown_state;
+enum dhcp_shutdown_state shutdown_state;
 
-static isc_result_t dhcp_io_shutdown (omapi_object_t *obj, void *foo)
+isc_result_t dhcp_io_shutdown (omapi_object_t *obj, void *foo)
 {
 	/* Shut down all listeners. */
 	if (shutdown_state == shutdown_listeners &&
@@ -1121,11 +1129,22 @@ static isc_result_t dhcp_io_shutdown_countdown (void *vlp)
 		    dhcp_failover_set_state (state, recover);
 		}
 	    }
+#if defined (DEBUG_MEMORY_LEAKAGE) || \
+		defined (DEBUG_MEMORY_LEAKAGE_ON_EXIT)
+	    free_everything ();
+	    omapi_print_dmalloc_usage_by_caller ();
+#endif
 	    exit (0);
 	}		
 #else
-	if (shutdown_state == shutdown_done)
+	if (shutdown_state == shutdown_done) {
+#if defined (DEBUG_MEMORY_LEAKAGE) || \
+                defined (DEBUG_MEMORY_LEAKAGE_ON_EXIT)
+            free_everything ();
+            omapi_print_dmalloc_usage_by_caller (); 
+#endif
 		exit (0);
+	}
 #endif
 	if (shutdown_state == shutdown_dhcp &&
 	    !failover_connection_count) {

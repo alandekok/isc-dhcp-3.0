@@ -42,7 +42,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dns.c,v 1.35.2.3 2001/06/04 18:56:13 mellon Exp $ Copyright (c) 2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dns.c,v 1.35.2.7 2001/06/21 23:34:54 mellon Exp $ Copyright (c) 2001 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -151,7 +151,9 @@ isc_result_t find_tsig_key (ns_tsig_key **key, const char *zname,
 	     strlen (zone -> key -> name) > NS_MAXDNAME) ||
 	    (!zone -> key -> algorithm ||
 	     strlen (zone -> key -> algorithm) > NS_MAXDNAME) ||
-	    (!zone -> key)) {
+	    (!zone -> key) ||
+	    (!zone -> key -> key) ||
+	    (zone -> key -> key -> len == 0)) {
 		return ISC_R_INVALIDKEY;
 	}
 	tkey = dmalloc (sizeof *tkey, MDL);
@@ -202,7 +204,8 @@ isc_result_t enter_dns_zone (struct dns_zone *zone)
 	} else {
 		dns_zone_hash =
 			new_hash ((hash_reference)dns_zone_reference,
-				  (hash_dereference)dns_zone_dereference, 1);
+				  (hash_dereference)dns_zone_dereference, 1,
+				  MDL);
 		if (!dns_zone_hash)
 			return ISC_R_NOMEMORY;
 	}
@@ -260,14 +263,14 @@ int dns_zone_dereference (ptr, file, line)
 	dns_zone = *ptr;
 	*ptr = (struct dns_zone *)0;
 	--dns_zone -> refcnt;
-	rc_register (file, line, ptr, dns_zone, dns_zone -> refcnt);
+	rc_register (file, line, ptr, dns_zone, dns_zone -> refcnt, 1);
 	if (dns_zone -> refcnt > 0)
 		return 1;
 
 	if (dns_zone -> refcnt < 0) {
 		log_error ("%s(%d): negative refcnt!", file, line);
 #if defined (DEBUG_RC_HISTORY)
-		dump_rc_history ();
+		dump_rc_history (dns_zone);
 #endif
 #if defined (POINTER_DEBUG)
 		abort ();
