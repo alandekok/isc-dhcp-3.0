@@ -3,7 +3,7 @@
    DHCP options parsing and reassembly. */
 
 /*
- * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: options.c,v 1.85.2.34 2006/02/22 22:43:27 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: options.c,v 1.85.2.38 2007/05/02 22:57:30 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #define DHCP_OPTION_DATA
@@ -77,10 +77,10 @@ int parse_options (packet)
 		return 0;
 
 	/* If we parsed a DHCP Option Overload option, parse more
-	   options out of the buffer(s) containing them. */
-	if (packet -> options_valid &&
-	    (op = lookup_option (&dhcp_universe, packet -> options,
-				 DHO_DHCP_OPTION_OVERLOAD))) {
+	 * options out of the buffer(s) containing them.
+	 */
+	if ((op = lookup_option(&dhcp_universe, packet->options,
+				DHO_DHCP_OPTION_OVERLOAD))) {
 		if (op -> data.data [0] & 1) {
 			if (!parse_option_buffer
 			    (packet -> options,
@@ -103,9 +103,8 @@ int parse_options (packet)
 }
 
 /* Parse options out of the specified buffer, storing addresses of option
-   values in packet -> options and setting packet -> options_valid if no
-   errors are encountered. */
-
+ * values in packet->options.
+ */
 int parse_option_buffer (options, buffer, length, universe)
 	struct option_state *options;
 	const unsigned char *buffer;
@@ -441,7 +440,7 @@ int fqdn_universe_decode (struct option_state *options,
 }
 
 /* cons options into a big buffer, and then split them out into the
-   three seperate buffers if needed.  This allows us to cons up a set
+   three separate buffers if needed.  This allows us to cons up a set
    of vendor options using the same routine. */
 
 int cons_options (inpacket, outpacket, lease, client_state,
@@ -2014,7 +2013,7 @@ int nwip_option_space_encapsulate (result, packet, lease, client_state,
 	if (universe -> index >= cfg_options -> universe_count)
 		return 0;
 	head = ((struct option_chain_head *)
-		cfg_options -> universes [fqdn_universe.index]);
+		cfg_options -> universes [nwip_universe.index]);
 	if (!head)
 		return 0;
 

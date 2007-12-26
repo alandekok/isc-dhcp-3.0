@@ -9,7 +9,7 @@
    probably worth looking at the config files for working ports as well. */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -256,13 +256,13 @@ char *strerror PROTO ((int));
 
 /* #define HAVE_SA_LEN */
 
-/* Every operating system has its own way of seperating lines in a
+/* Every operating system has its own way of separating lines in a
    sequential text file.  Most modern systems use a single character,
    either an ASCII Newline (10) or an ASCII Carriage Return (13).
 
    The most notable exception is MS-DOS (and consequently, Windows),
    which uses an ASCII Carriage Return followed by a Newline to
-   seperate each line.  Fortunately, MS-DOS C compiler libraries
+   separate each line.  Fortunately, MS-DOS C compiler libraries
    typically hide this from the programmer, returning just a Newline.
 
    Define EOL to be whatever getc() returns for a newline. */

@@ -3,7 +3,7 @@
    Turn data structures into printable text. */
 
 /*
- * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: print.c,v 1.53.2.14 2006/02/22 22:43:27 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: print.c,v 1.53.2.16 2007/05/01 20:42:56 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -891,7 +891,7 @@ static unsigned print_subexpression (expr, buf, len)
 			rv += print_subexpression (expr -> data.b2a.width,
 						   buf + rv, len - rv - 3);
 			buf [rv++] = ' ';
-			rv += print_subexpression (expr -> data.b2a.seperator,
+			rv += print_subexpression (expr -> data.b2a.separator,
 						   buf + rv, len - rv - 2);
 			buf [rv++] = ' ';
 			rv += print_subexpression (expr -> data.b2a.buffer,

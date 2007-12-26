@@ -3,7 +3,7 @@
    Parser for dhcpd config file... */
 
 /*
- * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: confpars.c,v 1.143.2.32 2006/07/20 16:02:52 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: confpars.c,v 1.143.2.36 2007/05/03 21:13:52 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -548,11 +548,13 @@ int parse_statement (cfile, group, type, host_decl, declaration)
 		next_token (&val, (unsigned *)0, cfile);
 		if (type != SUBNET_DECL && type != SHARED_NET_DECL) {
 			parse_warn (cfile, "pool declared outside of network");
-		}
-		if (type == POOL_DECL) {
+			skip_to_semi(cfile);
+		} else if (type == POOL_DECL) {
 			parse_warn (cfile, "pool declared within pool.");
-		}
-		parse_pool_statement (cfile, group, type);
+			skip_to_semi(cfile);
+		} else
+			parse_pool_statement (cfile, group, type);
+
 		return declaration;
 
 	      case RANGE:
@@ -1286,12 +1288,19 @@ void parse_pool_statement (cfile, group, type)
 		shared_network_reference (&pool -> shared_network,
 					  group -> subnet -> shared_network,
 					  MDL);
-	else
+	else if (type == SHARED_NET_DECL)
 		shared_network_reference (&pool -> shared_network,
 					  group -> shared_network, MDL);
+	else {
+		parse_warn(cfile, "Dynamic pools are only valid inside "
+				  "subnet or shared-network statements.");
+		skip_to_semi(cfile);
+		return;
+	}
 
-	if (!clone_group (&pool -> group, pool -> shared_network -> group, MDL))
-		log_fatal ("can't clone pool group.");
+	if (pool->shared_network == NULL ||
+            !clone_group(&pool->group, pool->shared_network->group, MDL))
+		log_fatal("can't clone pool group.");
 
 #if defined (FAILOVER_PROTOCOL)
 	/* Inherit the failover peer from the shared network. */
@@ -2641,7 +2650,7 @@ int parse_lease_declaration (struct lease **lp, struct parse *cfile)
 			}
 			break;
 
-			/* Colon-seperated hexadecimal octets... */
+			/* Colon-separated hexadecimal octets... */
 		      case UID:
 			seenbit = 8;
 			token = peek_token (&val, (unsigned *)0, cfile);

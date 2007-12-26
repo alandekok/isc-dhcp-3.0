@@ -3,7 +3,7 @@
    Failover protocol support code... */
 
 /*
- * Copyright (c) 2004-2006 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1999-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.53.2.46 2006/09/22 16:29:44 dhankins Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.48 2007/05/01 20:42:56 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -158,7 +158,7 @@ isc_result_t find_failover_peer (peer, name, file, line)
    each failover partner declaration in the dhcpd.conf file, primary
    or secondary, there is a failover_state object.  For any primary or
    secondary state object that has a connection to its peer, there is
-   also a failover_link object, which has its own input state seperate
+   also a failover_link object, which has its own input state separate
    from the failover protocol state for managing the actual bytes
    coming in off the wire.  Finally, there will be one listener object
    for every distinct port number associated with a secondary

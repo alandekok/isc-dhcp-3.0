@@ -3,7 +3,7 @@
    Examine and modify omapi objects. */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 2001-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: omshell.c,v 1.7.2.18 2005/10/27 15:56:26 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: omshell.c,v 1.7.2.20 2007/05/01 20:42:56 each Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include <time.h>
@@ -473,7 +473,7 @@ int main (int argc, char **argv, char **envp)
 			  case NUMBER:
 			    strcpy (buf, val);
 			    token = peek_token (&val, (unsigned *)0, cfile);
-			    /* Colon-seperated hex list? */
+			    /* Colon-separated hex list? */
 			    if (token == COLON)
 				goto cshl;
 			    else if (token == DOT) {

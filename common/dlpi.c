@@ -3,7 +3,7 @@
    Data Link Provider Interface (DLPI) network interface code. */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -79,7 +79,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dlpi.c,v 1.28.2.3 2004/11/24 17:39:15 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dlpi.c,v 1.28.2.5 2007/05/01 20:42:55 each Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -619,6 +619,7 @@ ssize_t receive_packet (interface, buf, len, from, hfrom)
 	int offset = 0;
 	int rslt;
 	int bufix = 0;
+	int paylen;
 	
 #ifdef USE_DLPI_RAW
 	length = read (interface -> rfdesc, dbuf, sizeof (dbuf));
@@ -679,7 +680,7 @@ ssize_t receive_packet (interface, buf, len, from, hfrom)
 	length -= offset;
 #endif
 	offset = decode_udp_ip_header (interface, dbuf, bufix,
-				       from, length);
+				       from, length, &paylen);
 
 	/* If the IP or UDP checksum was bad, skip the packet... */
 	if (offset < 0) {
@@ -689,9 +690,12 @@ ssize_t receive_packet (interface, buf, len, from, hfrom)
 	bufix += offset;
 	length -= offset;
 
+	if (length < paylen)
+		log_fatal("Internal inconsistency at %s:%d.", MDL);
+
 	/* Copy out the data in the packet... */
-	memcpy (buf, &dbuf [bufix], length);
-	return length;
+	memcpy(buf, &dbuf [bufix], paylen);
+	return paylen;
 }
 #endif
 

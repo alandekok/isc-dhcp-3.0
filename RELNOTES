@@ -1,6 +1,6 @@
 	      Internet Systems Consortium DHCP Distribution
-			     Version 3.0.5
-			    October 26, 2006
+			    Version 3.0.6b1
+			      May 1, 2007
 
 			     Release Notes
 
@@ -78,6 +78,78 @@ Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
 
+
+			Changes since 3.0.5
+
+- Assorted fixes for broken network devices:  Packet length is now
+  determined from the IP header length field to finally calculate the
+  UDP payload length, because some NIC drivers return more data than
+  they actually recived.
+
+- UDP packets are now stored in aligned data structures.
+
+- Allow trace output files (-tf option) to be overwritten, rather than
+  crashing dhcpd if the file already exists
+
+- A bug was fixed that caused dhcpd to segfault if a pool was declared
+  outside the scope of a subnet in dhcpd.conf.
+
+- A logic error in omapi interface code was repaired that might result in
+  incorrectly indicating 'up' state when any flags were set, rather than
+  specifically the INTERFACE_REQUESTED flag.Thanks to a patch from
+  Jochen Voss which got to us via Andrew Pollock at Debian.
+
+- Spelling fixes.
+
+- A reference leak on binding scopes set by ddns updates was repaired.
+
+- A memory leak in the minires_nsendsigned() function call was repaired.
+  Effectively, this leaked ~176 bytes per DDNS update.
+
+- In the case where an "L2" DHCP Relay Agent (one that does not set giaddr)
+  was directly attached to the same broadcast domain as the DHCP server,
+  the RFC3046 relay agent information option was not being returned to the
+  relay in the server's replies.  This was fixed; the dhcp server no longer
+  requires the giaddr to reply with relay agent information.  Note that
+  this also improves compatibility with L2 devices that "intercept" DHCP
+  packets and expect relay agent information even in unicast (renewal)
+  replies.  Thanks to a patch from Pekka Silvonen.
+
+- A bug was fixed where the BOOTP header 'sname' field had a value, the
+  copy written to persistent storage was actually the contents of the
+  'file' field.
+
+- A bug was fixed where the nwip virtual option space was referencing
+  the fqdn option's virtual option space's option cache.
+
+- Timestamp parsing errors that indicated missing "minutes" fields rather
+  than the actually missing "seconds" fields have been repaired thanks to
+  a patch from Kevin Steves.
+
+- A grammar error in the dhclient.8 manpage was repaired thanks to a patch
+  from Chris Wagner.
+
+- Several spelling typos were repaired, and some cross-references to other
+  relevant documents were included in the manpages, thanks to a patch
+  by Andrew Pollock which got to us via Tomas Pospisek.
+
+- Some bugs were fixed in the 'emergency relay agent options hologram'
+  which is used to retain relay agent option contents from when the
+  client was in INIT or REBIND states.  This should solve problems where
+  relay agent options were not echoed from the server, even when giaddr
+  was set.
+
+- dhclient now closes its descriptor to dhclient.leases prior to executing
+  dhclient-script.  Thanks to a patch from Tomas Pospisek.
+
+- The server's "by client-id" and "by hardware address" hash table lists
+  are now sorted according to the preference to re-allocate that lease to
+  returning clients.  This should eliminate pool starvation problems
+  arising when "INIT" clients were given new leases rather than presently
+  active ones.
+
+- A bug that kept option overloading from working (on reception) has
+  been repaired.
 
 			Changes since 3.0.5rc2
 

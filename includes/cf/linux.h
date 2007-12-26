@@ -5,7 +5,7 @@
    Based on a configuration originally supplied by Jonathan Stone. */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -79,7 +79,7 @@ extern int h_errno;
    in /var/state/misc - indeed, given that there's only one lease file, it
    would probably be better.   However, I have some ideas for optimizing
    the lease database that may result in a _lot_ of smaller files being
-   created, so in that context it makes more sense to have a seperate
+   created, so in that context it makes more sense to have a separate
    directory. */
 
 #ifndef _PATH_DHCPD_DB

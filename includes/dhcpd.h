@@ -3,7 +3,7 @@
    Definitions for dhcpd... */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -173,7 +173,7 @@ struct option_tag {
 
 /* An agent option structure.   We need a special structure for the
    Relay Agent Information option because if more than one appears in
-   a message, we have to keep them seperate. */
+   a message, we have to keep them separate. */
 
 struct agent_options {
 	struct agent_options *next;
@@ -235,6 +235,12 @@ struct packet {
 
 	int known;
 	int authenticated;
+
+	/* If we stash agent options onto the packet option state, to pretend
+	 * options we got in a previous exchange were still there, we need
+	 * to signal this in a reliable way.
+	 */
+	isc_boolean_t agent_options_stashed;
 };
 
 /* A network interface's MAC address. */
@@ -1940,7 +1946,7 @@ ssize_t decode_hw_header PROTO ((struct interface_info *, unsigned char *,
 				 unsigned, struct hardware *));
 ssize_t decode_udp_ip_header PROTO ((struct interface_info *, unsigned char *,
 				     unsigned, struct sockaddr_in *,
-				     unsigned));
+				     unsigned, unsigned *));
 
 /* ethernet.c */
 void assemble_ethernet_header PROTO ((struct interface_info *, unsigned char *,

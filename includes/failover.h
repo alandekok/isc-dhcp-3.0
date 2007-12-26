@@ -3,7 +3,7 @@
    Definitions for address trees... */
 
 /*
- * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 2000-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -236,7 +236,7 @@ enum failover_state {
 
 /* Service states are simplifications of failover states, particularly
    useful because the startup state isn't actually implementable as a
-   seperate failover state without maintaining a state stack. */
+   separate failover state without maintaining a state stack. */
 
 enum service_state {
 	unknown_service_state,
