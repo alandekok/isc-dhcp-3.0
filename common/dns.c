@@ -42,7 +42,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dns.c,v 1.29 2000/10/12 08:58:11 mellon Exp $ Copyright (c) 2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dns.c,v 1.32 2000/11/28 22:34:02 mellon Exp $ Copyright (c) 2000 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -305,6 +305,10 @@ ns_rcode find_cached_zone (const char *dname, ns_class class,
 	if (!zcookie)
 		return ns_r_servfail;
 
+	/* We can't look up a null zone. */
+	if (!dname || !*dname)
+		return ns_r_servfail;
+
 	/* For each subzone, try to find a cached zone. */
 	for (np = dname - 1; np; np = strchr (np, '.')) {
 		np++;
@@ -335,6 +339,7 @@ ns_rcode find_cached_zone (const char *dname, ns_class class,
 	if (zone -> primary) {
 		if (evaluate_option_cache (&nsaddrs, (struct packet *)0,
 					   (struct lease *)0,
+					   (struct client_state *)0,
 					   (struct option_state *)0,
 					   (struct option_state *)0,
 					   &global_scope,
@@ -353,6 +358,7 @@ ns_rcode find_cached_zone (const char *dname, ns_class class,
 	if (zone -> secondary) {
 		if (evaluate_option_cache (&nsaddrs, (struct packet *)0,
 					   (struct lease *)0,
+					   (struct client_state *)0,
 					   (struct option_state *)0,
 					   (struct option_state *)0,
 					   &global_scope,
@@ -401,7 +407,6 @@ void cache_found_zone (ns_class class,
 		       char *zname, struct in_addr *addrs, int naddrs)
 {
 	isc_result_t status = ISC_R_NOTFOUND;
-	const char *np;
 	struct dns_zone *zone = (struct dns_zone *)0;
 	struct data_string nsaddrs;
 	int ix = strlen (zname);
@@ -410,7 +415,7 @@ void cache_found_zone (ns_class class,
 		ix = 0;
 
 	/* See if there's already such a zone. */
-	if (dns_zone_lookup (&zone, np) == ISC_R_SUCCESS) {
+	if (dns_zone_lookup (&zone, zname) == ISC_R_SUCCESS) {
 		/* If it's not a dynamic zone, leave it alone. */
 		if (!zone -> timeout)
 			return;
@@ -419,9 +424,7 @@ void cache_found_zone (ns_class class,
 			option_cache_dereference (&zone -> primary, MDL);
 		if (zone -> secondary)
 			option_cache_dereference (&zone -> secondary, MDL);
-	}
-
-	if (!dns_zone_allocate (&zone, MDL))
+	} else if (!dns_zone_allocate (&zone, MDL))
 		return;
 
 	if (!zone -> name) {
