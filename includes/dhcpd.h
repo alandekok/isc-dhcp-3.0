@@ -26,6 +26,12 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <arpa/inet.h>
+
+#if defined (NSUPDATE)
+# include <arpa/nameser.h>
+# include <resolv.h>
+#endif
+
 #include <netdb.h>
 #else
 #define fd_set cygwin_fd_set
@@ -172,6 +178,8 @@ struct lease {
 	unsigned char uid_buf [32];
 	char *hostname;
 	char *client_hostname;
+	char *ddns_fwd_name;
+	char *ddns_rev_name;
 	struct host_decl *host;
 	struct subnet *subnet;
 	struct pool *pool;
@@ -257,6 +265,10 @@ struct lease_state {
 #define SV_VENDOR_OPTION_SPACE		19
 #define SV_ALWAYS_REPLY_RFC1048		20
 #define SV_SITE_OPTION_SPACE		21
+#define SV_ALWAYS_BROADCAST		22
+#define SV_DDNS_DOMAIN_NAME		23
+#define SV_DDNS_HOST_NAME		24
+#define SV_DDNS_REV_DOMAIN_NAME		25
 
 #if !defined (DEFAULT_DEFAULT_LEASE_TIME)
 # define DEFAULT_DEFAULT_LEASE_TIME 43200
@@ -761,20 +773,23 @@ typedef unsigned char option_mask [16];
 int parse_options PROTO ((struct packet *));
 int parse_option_buffer PROTO ((struct packet *, unsigned char *, int));
 int parse_agent_information_option PROTO ((struct packet *, int, u_int8_t *));
-int cons_options PROTO ((struct packet *, struct dhcp_packet *, int,
-			 struct option_state *,
+int cons_options PROTO ((struct packet *, struct dhcp_packet *, struct lease *,
+			 int, struct option_state *,
 			 int, int, int, struct data_string *));
-int store_options PROTO ((unsigned char *, int, struct option_state *,
-			   int *, int, int, int, int));
+int store_options PROTO ((unsigned char *, int,
+			  struct lease *, struct option_state *,
+			  int *, int, int, int, int));
 char *pretty_print_option PROTO ((unsigned int,
 				  unsigned char *, int, int, int));
 void do_packet PROTO ((struct interface_info *,
 		       struct dhcp_packet *, int,
 		       unsigned int, struct iaddr, struct hardware *));
-int hashed_option_get PROTO ((struct data_string *,
-			      struct universe *, struct option_state *, int));
+int hashed_option_get PROTO ((struct data_string *, struct universe *,
+			      struct packet *, struct lease *,
+			      struct option_state *, int));
 int agent_option_get PROTO ((struct data_string *, struct universe *,
-				struct option_state *, int));
+			      struct packet *, struct lease *,
+			     struct option_state *, int));
 void hashed_option_set PROTO ((struct universe *, struct option_state *,
 			       struct option_cache *,
 			       enum statement_op));
@@ -795,15 +810,19 @@ int hashed_option_state_dereference PROTO ((struct universe *,
 int agent_option_state_dereference PROTO ((struct universe *,
 					   struct option_state *));
 int store_option PROTO ((struct data_string *,
-		  struct universe *, struct option_cache *));
+			 struct universe *, struct lease *,
+			 struct option_cache *));
 int option_space_encapsulate PROTO ((struct data_string *,
 				     struct option_state *,
+				     struct lease *,
 				     struct data_string *));
 int hashed_option_space_encapsulate PROTO ((struct data_string *,
 					    struct option_state *,
+					    struct lease *,
 					    struct universe *));
 int agent_option_space_encapsulate PROTO ((struct data_string *,
 					   struct option_state *,
+					   struct lease *,
 					   struct universe *));
 
 /* errwarn.c */
@@ -817,6 +836,7 @@ int parse_warn PROTO ((char *, ...));
 /* dhcpd.c */
 extern TIME cur_time;
 extern struct group root_group;
+extern struct in_addr limited_broadcast;
 
 extern u_int16_t local_port;
 extern u_int16_t remote_port;
@@ -922,22 +942,27 @@ int option_cache PROTO ((struct option_cache **, struct data_string *,
 			 struct expression *, struct option *));
 int evaluate_boolean_expression PROTO ((int *,
 					struct packet *, struct option_state *,
+					struct lease *,
 					struct expression *));
 int evaluate_data_expression PROTO ((struct data_string *,
 				     struct packet *, struct option_state *,
+				     struct lease *,
 				     struct expression *));
 int evaluate_numeric_expression PROTO
 	((unsigned long *, struct packet *,
-	  struct option_state *, struct expression *));
+	  struct option_state *, struct lease *, struct expression *));
 int evaluate_option_cache PROTO ((struct data_string *,
 				  struct packet *,
 				  struct option_state *,
+				  struct lease *,
 				  struct option_cache *));
 int evaluate_boolean_option_cache PROTO ((struct packet *,
 					  struct option_state *,
+					  struct lease *,
 					  struct option_cache *));
 int evaluate_boolean_expression_result PROTO ((struct packet *,
 					       struct option_state *,
+					       struct lease *,
 					       struct expression *));
 void expression_dereference PROTO ((struct expression **, char *));
 void data_string_copy PROTO ((struct data_string *,
@@ -1098,7 +1123,6 @@ ssize_t send_fallback PROTO ((struct interface_info *,
 			      struct packet *, struct dhcp_packet *, size_t, 
 			      struct in_addr,
 			      struct sockaddr_in *, struct hardware *));
-void fallback_discard PROTO ((struct protocol *));
 #endif
 
 #ifdef USE_SOCKET_SEND
@@ -1116,6 +1140,11 @@ ssize_t receive_packet PROTO ((struct interface_info *,
 			       unsigned char *, size_t,
 			       struct sockaddr_in *, struct hardware *));
 #endif
+
+#if defined (USE_SOCKET_SEND) || defined (USE_SOCKET_FALLBACK)
+void fallback_discard PROTO ((struct protocol *));
+#endif
+
 #if defined (USE_SOCKET_SEND) && !defined (USE_SOCKET_FALLBACK)
 int can_unicast_without_arp PROTO ((struct interface_info *));
 int can_receive_unicast_unconfigured PROTO ((struct interface_info *));
@@ -1290,6 +1319,9 @@ void putLong PROTO ((unsigned char *, int32_t));
 void putUShort PROTO ((unsigned char *, u_int32_t));
 void putShort PROTO ((unsigned char *, int32_t));
 void putUChar PROTO ((unsigned char *, u_int32_t));
+int converted_length PROTO ((unsigned char *, unsigned int, unsigned int));
+int binary_to_ascii PROTO ((unsigned char *, unsigned char *,
+			    unsigned int, unsigned int));
 
 /* inet.c */
 struct iaddr subnet_number PROTO ((struct iaddr, struct iaddr));
@@ -1353,6 +1385,7 @@ void client_location_changed PROTO ((void));
 
 /* db.c */
 int write_lease PROTO ((struct lease *));
+int db_printable PROTO ((char *));
 int write_billing_class PROTO ((struct class *));
 int commit_leases PROTO ((void));
 void db_startup PROTO ((void));
@@ -1498,7 +1531,8 @@ struct executable_statement *default_classification_rules;
 
 void classification_setup PROTO ((void));
 void classify_client PROTO ((struct packet *));
-int check_collection PROTO ((struct packet *, struct collection *));
+int check_collection PROTO ((struct packet *, struct lease *,
+			     struct collection *));
 void classify PROTO ((struct packet *, struct class *));
 struct class *find_class PROTO ((char *));
 int unbill_class PROTO ((struct lease *, struct class *));
@@ -1506,9 +1540,11 @@ int bill_class PROTO ((struct lease *, struct class *));
 
 /* execute.c */
 int execute_statements PROTO ((struct packet *,
+			       struct lease *,
 			       struct option_state *, struct option_state *,
 			       struct executable_statement *));
 void execute_statements_in_scope PROTO ((struct packet *,
+					 struct lease *,
 					 struct option_state *,
 					 struct option_state *,
 					 struct group *, struct group *));

@@ -22,7 +22,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: conflex.c,v 1.45 1999/05/27 12:39:22 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: conflex.c,v 1.48 1999/07/06 20:41:22 mellon Exp $ Copyright (c) 1995, 1996, 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -359,13 +359,15 @@ static enum dhcp_token intern (atom, dfv)
 		if (!strcasecmp (atom + 1, "bandoned"))
 			return ABANDONED;
 		if (!strcasecmp (atom + 1, "dd"))
-			return ADD;
+			return TOKEN_ADD;
 		if (!strcasecmp (atom + 1, "ll"))
 			return ALL;
 		if (!strcasecmp (atom + 1, "rray"))
 			return ARRAY;
 		break;
 	      case 'b':
+		if (!strcasecmp (atom + 1, "inary-to-ascii"))
+			return BINARY_TO_ASCII;
 		if (!strcasecmp (atom + 1, "ackoff-cutoff"))
 			return BACKOFF_CUTOFF;
 		if (!strcasecmp (atom + 1, "ootp"))
@@ -404,6 +406,10 @@ static enum dhcp_token intern (atom, dfv)
 			return COMMUNICATIONS_INTERRUPTED;
 		break;
 	      case 'd':
+		if (!strcasecmp (atom + 1, "dns-fwd-name"))
+			return DDNS_FWD_NAME;
+		if (!strcasecmp (atom + 1, "dns-rev-name"))
+			return DDNS_REV_NAME;
 		if (!strcasecmp (atom + 1, "omain"))
 			return DOMAIN;
 		if (!strcasecmp (atom + 1, "eny"))
@@ -497,6 +503,8 @@ static enum dhcp_token intern (atom, dfv)
 	      case 'l':
 		if (!strcasecmp (atom + 1, "ease"))
 			return LEASE;
+		if (!strcasecmp (atom + 1, "eased-address"))
+			return LEASED_ADDRESS;
 		if (!strcasecmp (atom + 1, "imit"))
 			return LIMIT;
 		break;
@@ -531,8 +539,6 @@ static enum dhcp_token intern (atom, dfv)
 			return MY;
 		break;
 	      case 'n':
-		if (!strcasecmp (atom + 1, "ot"))
-			return NOT;
 		if (!strcasecmp (atom + 1, "ormal"))
 			return NORMAL;
 		if (!strcasecmp (atom + 1, "ameserver"))
@@ -599,6 +605,8 @@ static enum dhcp_token intern (atom, dfv)
 			return REBOOT;
 		if (!strcasecmp (atom + 1, "eject"))
 			return REJECT;
+		if (!strcasecmp (atom + 1, "everse"))
+			return REVERSE;
 		break;
 	      case 's':
 		if (!strcasecmp (atom + 1, "igned"))
