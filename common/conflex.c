@@ -3,7 +3,7 @@
    Lexical scanner for dhcpd config file... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: conflex.c,v 1.92.2.9 2004/11/24 17:39:15 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: conflex.c,v 1.92.2.13 2005/03/03 16:55:22 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -410,22 +410,62 @@ static enum dhcp_token read_number (c, cfile)
 	int c;
 	struct parse *cfile;
 {
+#ifdef OLD_LEXER
 	int seenx = 0;
+#endif
 	int i = 0;
 	int token = NUMBER;
 
 	cfile -> tokbuf [i++] = c;
 	for (; i < sizeof cfile -> tokbuf; i++) {
 		c = get_char (cfile);
-		if (!seenx && c == 'x') {
-			seenx = 1;
+
 #ifndef OLD_LEXER
-		} else if (isascii (c) && !isxdigit (c) &&
-			   (c == '-' || c == '_' || isalpha (c))) {
-			token = NAME;
-		} else if (isascii (c) && !isdigit (c) && isxdigit (c)) {
-			token = NUMBER_OR_NAME;
-#endif
+		/* Promote NUMBER -> NUMBER_OR_NAME -> NAME, never demote.
+		 * Except in the case of '0x' syntax hex, which gets called
+		 * a NAME at '0x', and returned to NUMBER_OR_NAME once it's
+		 * verified to be at least 0xf or less.
+		 */
+		switch(isascii(c) ? token : BREAK) {
+		    case NUMBER:
+			if(isdigit(c))
+				break;
+			/* FALLTHROUGH */
+		    case NUMBER_OR_NAME:
+			if(isxdigit(c)) {
+				token = NUMBER_OR_NAME;
+				break;
+			}
+			/* FALLTHROUGH */
+		    case NAME:
+			if((i == 2) && isxdigit(c) &&
+				(cfile->tokbuf[0] == '0') &&
+				((cfile->tokbuf[1] == 'x') ||
+				 (cfile->tokbuf[1] == 'X'))) {
+				token = NUMBER_OR_NAME;
+				break;
+			} else if(((c == '-') || (c == '_') || isalnum(c))) {
+				token = NAME;
+				break;
+			}
+			/* FALLTHROUGH */
+		    case BREAK:
+			/* At this point c is either EOF or part of the next
+			 * token.  If not EOF, rewind the file one byte so
+			 * the next token is read from there.
+			 */
+			if(c != EOF) {
+				cfile->bufix--;
+				cfile->ugflag = 1;
+			}
+			goto end_read;
+
+		    default:
+			log_fatal("read_number():%s:%d: impossible case", MDL);
+		}
+#else /* OLD_LEXER */
+		if (!seenx && (c == 'x') {
+			seenx = 1;
 		} else if (!isascii (c) || !isxdigit (c)) {
 			if (c != EOF) {
 				cfile -> bufix--;
@@ -433,16 +473,22 @@ static enum dhcp_token read_number (c, cfile)
 			}
 			break;
 		}
+#endif /* OLD_LEXER */
+
 		cfile -> tokbuf [i] = c;
 	}
+
 	if (i == sizeof cfile -> tokbuf) {
 		parse_warn (cfile,
 			    "numeric token larger than internal buffer");
 		--i;
 	}
+
+  end_read:
 	cfile -> tokbuf [i] = 0;
 	cfile -> tlen = i;
 	cfile -> tval = cfile -> tokbuf;
+
 	return token;
 }
 

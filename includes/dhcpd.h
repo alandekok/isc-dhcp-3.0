@@ -3,7 +3,7 @@
    Definitions for dhcpd... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1996-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -255,15 +255,14 @@ typedef struct {
 } dhcp_control_object_t;
 
 /* Lease states: */
-typedef enum {
-	FTS_FREE = 1,
-	FTS_ACTIVE = 2,
-	FTS_EXPIRED = 3,
-	FTS_RELEASED = 4,
-	FTS_ABANDONED = 5,
-	FTS_RESET = 6,
-	FTS_BACKUP = 7
-} binding_state_t;
+#define	FTS_FREE	1
+#define	FTS_ACTIVE	2
+#define	FTS_EXPIRED	3
+#define	FTS_RELEASED	4
+#define	FTS_ABANDONED	5
+#define	FTS_RESET	6
+#define	FTS_BACKUP	7
+typedef u_int8_t binding_state_t;
 
 /* FTS_LAST is the highest value that is valid for a lease binding state. */
 #define FTS_LAST FTS_BACKUP
@@ -306,9 +305,9 @@ struct lease {
 #	define EPHEMERAL_FLAGS		(MS_NULL_TERMINATION | \
 					 UNICAST_BROADCAST_HACK)
 
-	binding_state_t __attribute__ ((mode (__byte__))) binding_state;
-	binding_state_t __attribute__ ((mode (__byte__))) next_binding_state;
-	binding_state_t __attribute__ ((mode (__byte__))) desired_binding_state;
+	binding_state_t binding_state;
+	binding_state_t next_binding_state;
+	binding_state_t desired_binding_state;
 	
 	struct lease_state *state;
 
@@ -1828,7 +1827,6 @@ u_int32_t host_addr PROTO ((struct iaddr, struct iaddr));
 int addr_eq PROTO ((struct iaddr, struct iaddr));
 char *piaddr PROTO ((struct iaddr));
 char *piaddrmask (struct iaddr, struct iaddr, const char *, int);
-char *piaddr1 PROTO ((struct iaddr));
 
 /* dhclient.c */
 extern const char *path_dhclient_conf;

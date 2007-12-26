@@ -3,7 +3,7 @@
    Network input dispatcher... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: discover.c,v 1.42.2.15 2004/06/10 17:59:16 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: discover.c,v 1.42.2.17 2005/03/03 16:55:22 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -390,6 +390,18 @@ void discover_interfaces (state)
 
 			/* If we found one, nothing more to do.. */
 			if (tmp)
+				continue;
+
+			strncpy (ifr.ifr_name, name, IFNAMSIZ);
+
+			/* Skip non broadcast interfaces (plus loopback and
+			 * point-to-point in case an OS incorrectly marks them
+			 * as broadcast).
+			 */
+			if ((ioctl (sock, SIOCGIFFLAGS, &ifr) < 0) ||
+			    (!(ifr.ifr_flags & IFF_BROADCAST)) ||
+			    (ifr.ifr_flags & IFF_LOOPBACK ) ||
+			    (ifr.ifr_flags & IFF_POINTOPOINT))
 				continue;
 
 			/* Otherwise, allocate one. */

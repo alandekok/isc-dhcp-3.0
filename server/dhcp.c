@@ -3,7 +3,7 @@
    DHCP Protocol engine. */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.44 2004/11/24 17:39:19 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.49 2005/03/03 16:55:24 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -500,27 +500,25 @@ void dhcprequest (packet, ms_nulltp, ip_lease)
 				  msgbuf, peer -> nrr);
 			goto out;
 		}
-		/* Don't load balance if the client is RENEWING or REBINDING.
-		   If it's RENEWING, we are the only server to hear it, so
-		   we have to serve it.   If it's REBINDING, it's out of
-		   communication with the other server, so there's no point
-		   in waiting to serve it.    However, if the lease we're
-		   offering is not a free lease, then we may be the only
-		   server that can offer it, so we can't load balance if
-		   the lease isn't in the free or backup state. */
-		if (peer -> service_state == cooperating &&
-		    !packet -> raw -> ciaddr.s_addr &&
-		    (lease -> binding_state == FTS_FREE ||
-		     lease -> binding_state == FTS_BACKUP)) {
-			if (!load_balance_mine (packet, peer)) {
-				log_debug ("%s: load balance to peer %s",
-					   msgbuf, peer -> name);
-				goto out;
-			}
-		}
 
-		/* Don't let a client allocate a lease using DHCPREQUEST
-		   if the lease isn't ours to allocate. */
+		/* "load balance to peer" - is not done at all for request.
+		 *
+		 * If it's RENEWING, we are the only server to hear it, so
+		 * we have to serve it.   If it's REBINDING, it's out of
+		 * communication with the other server, so there's no point
+		 * in waiting to serve it.    However, if the lease we're
+		 * offering is not a free lease, then we may be the only
+		 * server that can offer it, so we can't load balance if
+		 * the lease isn't in the free or backup state.  If it is
+		 * in the free or backup state, then that state is what
+		 * mandates one server or the other should perform the
+		 * allocation, not the LBA...we know the peer cannot
+		 * allocate a request for an address in our free state.
+		 *
+		 * So our only compass is lease_mine_to_reallocate().  This
+		 * effects both load balancing, and a sanity-check that we
+		 * are not going to try to allocate a lease that isn't ours.
+		 */
 		if ((lease -> binding_state == FTS_FREE ||
 		     lease -> binding_state == FTS_BACKUP) &&
 		    !lease_mine_to_reallocate (lease)) {
@@ -1209,7 +1207,6 @@ void dhcpinform (packet, ms_nulltp)
 	log_info ("%s", msgbuf);
 
 	/* Figure out the address of the boot file server. */
-	raw.siaddr = from;
 	if ((oc =
 	     lookup_option (&server_universe, options, SV_NEXT_SERVER))) {
 		if (evaluate_option_cache (&d1, packet, (struct lease *)0,
@@ -1753,10 +1750,14 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 					   &lease -> scope, oc, MDL)) {
 			find_hosts_by_uid (&hp, d1.data, d1.len, MDL);
 			data_string_forget (&d1, MDL);
-			if (hp)
-				host_reference (&host, hp, MDL);
+			for (h = hp; h; h = h -> n_ipaddr) {
+				if (!h -> fixed_addr)
+					break;
+			}
+			if (h)
+				host_reference (&host, h, MDL);
 		}
-		if (!hp) {
+		if (!host) {
 			find_hosts_by_haddr (&hp,
 					     packet -> raw -> htype,
 					     packet -> raw -> chaddr,
@@ -2486,7 +2487,7 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp)
 	}
 
 	/* Figure out the address of the boot file server. */
-	memcpy (&state -> siaddr, state -> from.iabuf, sizeof state -> siaddr);
+	memset (&state -> siaddr, 0, sizeof state -> siaddr);
 	if ((oc =
 	     lookup_option (&server_universe,
 			    state -> options, SV_NEXT_SERVER))) {
@@ -3582,18 +3583,18 @@ int mockup_lease (struct lease **lp, struct packet *packet,
 		  struct shared_network *share, struct host_decl *hp)
 {
 	struct lease *lease = (struct lease *)0;
-	const unsigned char **s;
-	isc_result_t status;
 	struct host_decl *rhp = (struct host_decl *)0;
 	
-	status = lease_allocate (&lease, MDL);
-	if (status != ISC_R_SUCCESS)
+	if (lease_allocate (&lease, MDL) != ISC_R_SUCCESS)
 		return 0;
-	if (host_reference (&rhp, hp, MDL) != ISC_R_SUCCESS)
+	if (host_reference (&rhp, hp, MDL) != ISC_R_SUCCESS) {
+		lease_dereference (&lease, MDL);
 		return 0;
+	}
 	if (!find_host_for_network (&lease -> subnet,
 				    &rhp, &lease -> ip_addr, share)) {
 		lease_dereference (&lease, MDL);
+		host_dereference (&rhp, MDL);
 		return 0;
 	}
 	host_reference (&lease -> host, rhp, MDL);
@@ -3613,7 +3614,9 @@ int mockup_lease (struct lease **lp, struct packet *packet,
 	lease -> starts = lease -> timestamp = lease -> ends = MIN_TIME;
 	lease -> flags = STATIC_LEASE;
 	lease -> binding_state = FTS_FREE;
+
 	lease_reference (lp, lease, MDL);
+
 	lease_dereference (&lease, MDL);
 	host_dereference (&rhp, MDL);
 	return 1;

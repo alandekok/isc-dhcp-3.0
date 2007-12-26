@@ -3,7 +3,7 @@
    Definitions for address trees... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 2000-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -307,6 +307,8 @@ typedef struct _dhcp_failover_state {
 					   queue. */
 	int pool_count;			/* Number of pools referencing this
 					   failover state object. */
+	int curUPD;			/* If an UPDREQ* message is in motion,
+					   this value indicates which one. */
 } dhcp_failover_state_t;
 
 #define DHCP_FAILOVER_VERSION		1

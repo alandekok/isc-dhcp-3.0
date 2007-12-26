@@ -3,7 +3,7 @@
    Failover protocol support code... */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1999-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.53.2.35 2004/11/24 17:39:19 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.38 2005/03/03 16:55:25 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -1946,7 +1946,15 @@ isc_result_t dhcp_failover_peer_state_changed (dhcp_failover_state_t *state,
 			   XXX clever detection of when we should send an
 			   XXX UPDREQALL message rather than an UPDREQ
 			   XXX message.   What to do, what to do? */
-			dhcp_failover_send_update_request (state);
+			/* Currently when we enter recover state, no matter
+			 * the reason, we send an UPDREQALL.  So, it makes
+			 * the most sense to stick to that until something
+			 * better is done.
+			 * Furthermore, we only went to send the update
+			 * request if we are not in startup state.
+			 */
+			if (state -> me.state == recover)
+				dhcp_failover_send_update_request_all (state);
 			break;
 
 		      case shut_down:
@@ -4338,10 +4346,16 @@ isc_result_t dhcp_failover_send_update_request (dhcp_failover_state_t *state)
 	if (!link -> outer || link -> outer -> type != omapi_type_connection)
 		return ISC_R_INVALIDARG;
 
+	if (state -> curUPD)
+		return ISC_R_ALREADYRUNNING;
+
 	status = (dhcp_failover_put_message
 		  (link, link -> outer,
 		   FTM_UPDREQ,
 		   (failover_option_t *)0));
+
+	if (status == ISC_R_SUCCESS)
+		state -> curUPD = FTM_UPDREQ;
 
 #if defined (DEBUG_FAILOVER_MESSAGES)
 	if (status != ISC_R_SUCCESS)
@@ -4378,10 +4392,17 @@ isc_result_t dhcp_failover_send_update_request_all (dhcp_failover_state_t
 	if (!link -> outer || link -> outer -> type != omapi_type_connection)
 		return ISC_R_INVALIDARG;
 
+	/* If there is an UPDREQ in progress, then upgrade to UPDREQALL. */
+	if (state -> curUPD && (state -> curUPD != FTM_UPDREQ))
+		return ISC_R_ALREADYRUNNING;
+
 	status = (dhcp_failover_put_message
 		  (link, link -> outer,
 		   FTM_UPDREQALL,
 		   (failover_option_t *)0));
+
+	if (status == ISC_R_SUCCESS)
+		state -> curUPD = FTM_UPDREQALL;
 
 #if defined (DEBUG_FAILOVER_MESSAGES)
 	if (status != ISC_R_SUCCESS)
@@ -4470,6 +4491,10 @@ isc_result_t dhcp_failover_process_bind_update (dhcp_failover_state_t *state,
 	}
 
 	if (msg -> options_present & FTB_CHADDR) {
+		if (msg->binding_status == FTS_ABANDONED) {
+			message = "BNDUPD to ABANDONED with a CHADDR";
+			goto bad;
+		}
 		if (msg -> chaddr.count > sizeof lt -> hardware_addr.hbuf) {
 			message = "chaddr to long";
 			goto bad;
@@ -4477,25 +4502,65 @@ isc_result_t dhcp_failover_process_bind_update (dhcp_failover_state_t *state,
 		lt -> hardware_addr.hlen = msg -> chaddr.count;
 		memcpy (lt -> hardware_addr.hbuf, msg -> chaddr.data,
 			msg -> chaddr.count);
-	}		
+	} else if (msg->binding_status == FTS_ACTIVE ||
+		   msg->binding_status == FTS_EXPIRED ||
+		   msg->binding_status == FTS_RELEASED) {
+		message = "BNDUPD without CHADDR";
+		goto bad;
+	} else if (msg->binding_status == FTS_ABANDONED) {
+		lt->hardware_addr.hlen = 0;
+		if (lt->scope)
+			binding_scope_dereference(&lt->scope, MDL);
+	}
 
-	if (msg -> options_present & FTB_CLIENT_IDENTIFIER) {
-		lt -> uid_len = msg -> client_identifier.count;
-		if (lt -> uid_len > sizeof lt -> uid_buf) {
-			lt -> uid_max = lt -> uid_len;
-			lt -> uid = dmalloc (lt -> uid_len, MDL);
-			if (!lt -> uid) {
-				message = "no memory";
-				goto bad;
+	/* There is no explicit message content to indicate that the client
+	 * supplied no client-identifier.  So if we don't hear of a value,
+	 * we discard the last one.
+	 */
+	if (msg->options_present & FTB_CLIENT_IDENTIFIER) {
+		if (msg->binding_status == FTS_ABANDONED) {
+			message = "BNDUPD to ABANDONED with client-id";
+			goto bad;
+		}
+
+		lt->uid_len = msg->client_identifier.count;
+
+		/* Allocate the lt->uid buffer if we haven't already, or
+		 * re-allocate the lt-uid buffer if we have one that is not
+		 * large enough.  Otherwise, just use the extant buffer.
+		 */
+		if (!lt->uid || lt->uid == lt->uid_buf ||
+		    lt->uid_len > lt->uid_max) {
+			if (lt->uid && lt->uid != lt->uid_buf)
+				dfree(lt->uid, MDL);
+
+			if (lt->uid_len > sizeof(lt->uid_buf)) {
+				lt->uid_max = lt->uid_len;
+				lt->uid = dmalloc(lt->uid_len, MDL);
+				if (!lt->uid) {
+					message = "no memory";
+					goto bad;
+				}
+			} else {
+				lt->uid_max = sizeof(lt->uid_buf);
+				lt->uid = lt->uid_buf;
 			}
-		} else {
-			lt -> uid_max = sizeof lt -> uid_buf;
-			lt -> uid = lt -> uid_buf;
 		}
 		memcpy (lt -> uid,
 			msg -> client_identifier.data, lt -> uid_len);
+	} else if (lt->uid && msg->binding_status != FTS_RESET &&
+		   msg->binding_status != FTS_FREE &&
+		   msg->binding_status != FTS_BACKUP) {
+		if (lt->uid != lt->uid_buf)
+			dfree (lt->uid, MDL);
+		lt->uid = NULL;
+		lt->uid_max = lt->uid_len = 0;
 	}
-		
+
+	/* If the lease was expired, also remove the stale binding scope. */
+	if (lt->scope && lt->ends < cur_time)
+		binding_scope_dereference(&lt->scope, MDL);
+
 	/* XXX Times may need to be adjusted based on clock skew! */
 	if (msg -> options_present & FTB_STOS) {
 		lt -> starts = msg -> stos;
@@ -4826,6 +4891,8 @@ dhcp_failover_process_update_done (dhcp_failover_state_t *state,
 {
 	log_info ("failover peer %s: peer update completed.",
 		  state -> name);
+
+	state -> curUPD = 0;
 
 	switch (state -> me.state) {
 	      case unknown_state:

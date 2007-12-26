@@ -3,7 +3,7 @@
    DHCP Client. */
 
 /*
- * Copyright (c) 2004 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2005 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -32,7 +32,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.129.2.23 2004/11/24 17:39:14 dhankins Exp $ Copyright (c) 2004 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.129.2.27 2005/03/03 16:55:22 dhankins Exp $ Copyright (c) 2004-2005 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -61,7 +61,7 @@ struct in_addr giaddr;
    assert (state_is == state_shouldbe). */
 #define ASSERT_STATE(state_is, state_shouldbe) {}
 
-static char copyright[] = "Copyright 2004 Internet Systems Consortium.";
+static char copyright[] = "Copyright 2004-2005 Internet Systems Consortium.";
 static char arr [] = "All rights reserved.";
 static char message [] = "Internet Systems Consortium DHCP Client";
 static char url [] = "For info, please visit http://www.isc.org/products/DHCP";
@@ -1253,7 +1253,7 @@ struct client_lease *packet_to_lease (packet, client)
 				break;
 		lease -> server_name = dmalloc (len + 1, MDL);
 		if (!lease -> server_name) {
-			log_error ("dhcpoffer: no memory for filename.\n");
+			log_error ("dhcpoffer: no memory for server name.\n");
 			destroy_client_lease (lease);
 			return (struct client_lease *)0;
 		} else {
