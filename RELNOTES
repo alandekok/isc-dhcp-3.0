@@ -1,6 +1,6 @@
 	      Internet Systems Consortium DHCP Distribution
-			    Version 3.0.4b1
-			    October 14, 2005
+			    Version 3.0.4b2
+			    November 3, 2005
 
 			     Release Notes
 
@@ -43,6 +43,18 @@ Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
 
+
+			Changes since 3.0.4b1
+
+- Command line parsing in omshell was repaired - it no longer closes
+  STDIN after reading one line.
+
+- The resolver library no longer closes the /etc/resolv.conf file
+  descriptor it opened twice.
+
+- Changes to trailing NULL removal in 't' option-atoms has been rethought,
+  it now includes 'd' (domain name) types, and tries hard not to rewind an
+  option beyond the start of the text field it is un-terminating.
 
 			Changes since 3.0.3
 
