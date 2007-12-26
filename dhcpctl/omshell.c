@@ -3,7 +3,7 @@
    Examine and modify omapi objects. */
 
 /*
- * Copyright (c) 2001 Internet Software Consortium.
+ * Copyright (c) 2001-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -429,6 +429,11 @@ int main (int argc, char **argv, char **envp)
 			    break;
 		    }
 
+		    if (!oh) {
+			    printf ("not open.\n");
+			    skip_to_semi (cfile);
+			    break;
+		    }
 		    omapi_object_dereference (&oh, MDL);
 		    
 		    break;
@@ -480,6 +485,7 @@ int main (int argc, char **argv, char **envp)
 				val = buf;
 				do {
 				    int intval = atoi (val);
+				dotiszero:
 				    if (intval > 255) {
 					parse_warn (cfile,
 						    "dotted octet > 255: %s",
@@ -492,8 +498,10 @@ int main (int argc, char **argv, char **envp)
 							(unsigned *)0, cfile);
 				    if (token != DOT)
 					    break;
-				    token = next_token (&val,
-							(unsigned *)0, cfile);
+				    /* DOT is zero. */
+				    while ((token = next_token (&val,
+					(unsigned *)0, cfile)) == DOT)
+					*s++ = 0;
 				} while (token == NUMBER);
 				dhcpctl_set_data_value (oh, buf,
 							(unsigned)(s - buf),

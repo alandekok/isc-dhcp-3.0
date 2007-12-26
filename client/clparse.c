@@ -3,7 +3,7 @@
    Parser for dhclient config and lease files... */
 
 /*
- * Copyright (c) 1996-2001 Internet Software Consortium.
+ * Copyright (c) 1996-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: clparse.c,v 1.62.2.1 2001/06/01 17:26:44 mellon Exp $ Copyright (c) 1996-2001 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: clparse.c,v 1.62.2.4 2003/02/10 00:39:57 dhankins Exp $ Copyright (c) 1996-2002 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -92,6 +92,7 @@ isc_result_t read_client_conf ()
 	top_level_config.script_name = path_dhclient_script;
 	top_level_config.requested_options = default_requested_options;
 	top_level_config.omapi_port = -1;
+	top_level_config.do_forward_update = 1;
 
 	group_allocate (&top_level_config.on_receipt, MDL);
 	if (!top_level_config.on_receipt)
@@ -460,6 +461,23 @@ void parse_client_statement (cfile, ip, config)
 		parse_semi (cfile);
 		return;
 		
+	      case DO_FORWARD_UPDATE:
+		token = next_token (&val, (unsigned *)0, cfile);
+		token = next_token (&val, (unsigned *)0, cfile);
+		if (!strcasecmp (val, "on") ||
+		    !strcasecmp (val, "true"))
+			config -> do_forward_update = 1;
+		else if (!strcasecmp (val, "off") ||
+			 !strcasecmp (val, "false"))
+			config -> do_forward_update = 0;
+		else {
+			parse_warn (cfile, "expecting boolean value.");
+			skip_to_semi (cfile);
+			return;
+		}
+		parse_semi (cfile);
+		return;
+
 	      case REBOOT:
 		token = next_token (&val, (unsigned *)0, cfile);
 		parse_lease_time (cfile, &config -> reboot_timeout);
@@ -599,34 +617,41 @@ void parse_option_list (cfile, list)
 	struct parse *cfile;
 	u_int32_t **list;
 {
-	int ix, i;
+	int ix;
 	int token;
 	const char *val;
 	pair p = (pair)0, q, r;
+	struct option *option;
 
 	ix = 0;
 	do {
-		token = next_token (&val, (unsigned *)0, cfile);
-		if (token == SEMI)
+		token = peek_token (&val, (unsigned *)0, cfile);
+		if (token == SEMI) {
+			token = next_token (&val, (unsigned *)0, cfile);
 			break;
+		}
 		if (!is_identifier (token)) {
 			parse_warn (cfile, "%s: expected option name.", val);
+			token = next_token (&val, (unsigned *)0, cfile);
 			skip_to_semi (cfile);
 			return;
 		}
-		for (i = 0; i < 256; i++) {
-			if (!strcasecmp (dhcp_options [i].name, val))
-				break;
-		}
-		if (i == 256) {
+		option = parse_option_name (cfile, 0, NULL);
+		if (!option) {
 			parse_warn (cfile, "%s: expected option name.", val);
+			return;
+		}
+		if (option -> universe != &dhcp_universe) {
+			parse_warn (cfile,
+				"%s.%s: Only global options allowed.",
+				option -> universe -> name, option->name );
 			skip_to_semi (cfile);
 			return;
 		}
 		r = new_pair (MDL);
 		if (!r)
 			log_fatal ("can't allocate pair for option code.");
-		r -> car = (caddr_t)(long)i;
+		r -> car = (caddr_t)(long)option -> code;
 		r -> cdr = (pair)0;
 		if (p)
 			q -> cdr = r;

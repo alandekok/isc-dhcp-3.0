@@ -3,7 +3,7 @@
    DHCP/BOOTP Relay Agent. */
 
 /*
- * Copyright (c) 1997-2001 Internet Software Consortium.
+ * Copyright (c) 1997-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhcrelay.c,v 1.52 2001/04/19 16:48:53 mellon Exp $ Copyright (c) 1997-2000 Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcrelay.c,v 1.52.2.4 2003/02/05 06:52:31 dhankins Exp $ Copyright (c) 1997-2002 Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -88,6 +88,8 @@ int bad_circuit_id = 0;		/* Circuit ID option in matching RAI option
 				   did not match any known circuit ID. */
 int missing_circuit_id = 0;	/* Circuit ID option in matching RAI option
 				   was missing. */
+int max_hop_count = 10;		/* Maximum hop count */
+
 
 	/* Maximum size of a packet with agent options added. */
 int dhcp_max_agent_option_packet_length = 576;
@@ -107,7 +109,7 @@ struct server_list {
 	struct sockaddr_in to;
 } *servers;
 
-static char copyright [] = "Copyright 1997-2000 Internet Software Consortium.";
+static char copyright [] = "Copyright 1997-2002 Internet Software Consortium.";
 static char arr [] = "All rights reserved.";
 static char message [] = "Internet Software Consortium DHCP Relay Agent";
 static char url [] = "For info, please visit http://www.isc.org/products/DHCP";
@@ -182,6 +184,15 @@ int main (argc, argv, envp)
 			quiet_interface_discovery = 1;
 		} else if (!strcmp (argv [i], "-a")) {
 			add_agent_options = 1;
+		} else if (!strcmp (argv [i], "-c")) {
+			int hcount;
+			if (++i == argc)
+				usage ();
+			hcount = atoi(argv[i]);
+			if (hcount <= 255)
+				max_hop_count= hcount;
+			else
+				usage ();
 		} else if (!strcmp (argv [i], "-A")) {
 			if (++i == argc)
 				usage ();
@@ -423,6 +434,10 @@ void relay (ip, packet, length, from_port, from, hfrom)
 	   that set giaddr, so we won't see it. */
 	if (!packet -> giaddr.s_addr)
 		packet -> giaddr = ip -> primary_address;
+	if (packet -> hops < max_hop_count)
+		packet -> hops = packet -> hops + 1;
+	else
+		return;
 
 	/* Otherwise, it's a BOOTREQUEST, so forward it to all the
 	   servers. */
@@ -446,10 +461,11 @@ void relay (ip, packet, length, from_port, from, hfrom)
 
 static void usage ()
 {
-	log_fatal ("Usage: dhcrelay [-p <port>] [-d] [-D] [-i %s%s%s",
-	       "interface]\n                ",
-	       "[-q] [-a] [-A length] [-m append|replace|forward|discard]\n",
-	       "                [server1 [... serverN]]");
+	log_fatal ("Usage: dhcrelay [-p <port>] [-d] [-D] [-i %s%s%s%s",
+		"interface] [-q] [-a]\n                ",
+		"[-c count] [-A length] ",
+		"[-m append|replace|forward|discard]\n",
+		"                [server1 [... serverN]]");
 }
 
 int write_lease (lease)
@@ -505,6 +521,14 @@ isc_result_t find_class (struct class **class, const char *c1,
 int parse_allow_deny (struct option_cache **oc, struct parse *p, int i)
 {
 	return 0;
+}
+
+/* As a wise man once said in dhcpctl/omshell.c: */
+/* Sigh */
+isc_result_t dhcp_set_control_state (control_object_state_t oldstate,
+				     control_object_state_t newstate)
+{
+	return ISC_R_SUCCESS;
 }
 
 #endif

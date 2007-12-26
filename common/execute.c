@@ -3,7 +3,7 @@
    Support for executable statements. */
 
 /*
- * Copyright (c) 1998-2001 Internet Software Consortium.
+ * Copyright (c) 1998-2002 Internet Software Consortium.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: execute.c,v 1.44.2.7 2001/08/08 14:48:19 mellon Exp $ Copyright (c) 1998-2000 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: execute.c,v 1.44.2.9 2002/11/17 02:26:58 dhankins Exp $ Copyright (c) 1998-2002 The Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -545,7 +545,7 @@ int executable_statement_dereference (ptr, file, line)
 	}
 
 	(*ptr) -> refcnt--;
-	rc_register (file, line, ptr, *ptr, (*ptr) -> refcnt, 1);
+	rc_register (file, line, ptr, *ptr, (*ptr) -> refcnt, 1, RC_MISC);
 	if ((*ptr) -> refcnt > 0) {
 		*ptr = (struct executable_statement *)0;
 		return 1;
