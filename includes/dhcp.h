@@ -154,6 +154,8 @@ struct dhcp_packet {
 #define DHO_DHCP_REBINDING_TIME		59
 #define DHO_VENDOR_CLASS_IDENTIFIER	60
 #define DHO_DHCP_CLIENT_IDENTIFIER	61
+#define DHO_NWIP_DOMAIN_NAME		62
+#define DHO_NWIP_SUBOPTIONS		63
 #define DHO_USER_CLASS			77
 #define DHO_DHCP_AGENT_OPTIONS		82
 /* The DHO_AUTHENTICATE option is not a standard yet, so I've
@@ -162,6 +164,10 @@ struct dhcp_packet {
    immediately and shamelessly break this, so don't count on it
    continuing to work. */
 #define DHO_AUTHENTICATE		210
+/* The DHO_SUBNET_SELECTION option is also not standard - same deal
+   as above. */
+#define DHO_SUBNET_SELECTION		211
+
 #define DHO_END				255
 
 /* DHCP message types. */

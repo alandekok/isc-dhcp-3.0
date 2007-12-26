@@ -17,7 +17,7 @@
 # http://www.isc.org for more information.
 #
 
-SUBDIRS=	common server client relay
+SUBDIRS=	common $(MINIRES) omapip server client relay dhcpctl
 
 all:
 	@for dir in ${SUBDIRS}; do \
@@ -55,3 +55,9 @@ distclean:
 		(cd $$dir; $(MAKE) distclean) || exit 1; \
 	 done
 	@rm -f Makefile
+
+links:
+	@for dir in ${SUBDIRS}; do \
+		echo "Making links in $$dir"; \
+		(cd $$dir; $(MAKE) links) || exit 1; \
+	 done

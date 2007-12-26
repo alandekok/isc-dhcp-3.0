@@ -3,26 +3,47 @@
    DHCP/BOOTP Relay Agent. */
 
 /*
- * Copyright (c) 1996-1999 Internet Software Consortium.
- * Use is subject to license terms which appear in the file named
- * ISC-LICENSE that should have accompanied this file when you
- * received it.   If a file named ISC-LICENSE did not accompany this
- * file, or you are not sure the one you have is correct, you may
- * obtain an applicable copy of the license at:
+ * Copyright (c) 1997-2000 Internet Software Consortium.
+ * All rights reserved.
  *
- *             http://www.isc.org/isc-license-1.0.html. 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * This file is part of the ISC DHCP distribution.   The documentation
- * associated with this file is listed in the file DOCUMENTATION,
- * included in the top-level directory of this release.
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of Internet Software Consortium nor the names
+ *    of its contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
  *
- * Support and other services are available for ISC products - see
- * http://www.isc.org for more information.
+ * THIS SOFTWARE IS PROVIDED BY THE INTERNET SOFTWARE CONSORTIUM AND
+ * CONTRIBUTORS ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES,
+ * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE INTERNET SOFTWARE CONSORTIUM OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+ * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ * This software has been written for the Internet Software Consortium
+ * by Ted Lemon in cooperation with Vixie Enterprises and Nominum, Inc.
+ * To learn more about the Internet Software Consortium, see
+ * ``http://www.isc.org/''.  To learn more about Vixie Enterprises,
+ * see ``http://www.vix.com''.   To learn more about Nominum, Inc., see
+ * ``http://www.nominum.com''.
  */
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhcrelay.c,v 1.33.2.2 1999/12/21 19:30:07 mellon Exp $ Copyright (c) 1997, 1998, 1999 The Internet Software Consortium.  All rights reserved.\n";
+"$Id: dhcrelay.c,v 1.44 2000/09/01 23:06:37 mellon Exp $ Copyright (c) 1997-2000 Internet Software Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -35,15 +56,13 @@ TIME default_lease_time = 43200; /* 12 hours... */
 TIME max_lease_time = 86400; /* 24 hours... */
 struct tree_cache *global_options [256];
 
-int log_perror = 1;
-
 /* Needed to prevent linking against conflex.c. */
 int lexline;
 int lexchar;
 char *token_line;
 char *tlname;
 
-char *path_dhcrelay_pid = _PATH_DHCRELAY_PID;
+const char *path_dhcrelay_pid = _PATH_DHCRELAY_PID;
 
 int bogus_agent_drops = 0;	/* Packets dropped because agent option
 				   field was specified and we're not relaying
@@ -82,19 +101,16 @@ enum { forward_and_append,	/* Forward and append our own relay option. */
 
 u_int16_t local_port;
 u_int16_t remote_port;
-int log_priority;
 
 struct server_list {
 	struct server_list *next;
 	struct sockaddr_in to;
 } *servers;
 
-static char copyright [] =
-"Copyright 1997, 1998, 1999 The Internet Software Consortium.";
+static char copyright [] = "Copyright 1997-2000 Internet Software Consortium.";
 static char arr [] = "All rights reserved.";
 static char message [] = "Internet Software Consortium DHCP Relay Agent";
-static char contrib [] = "\nPlease contribute if you find this software useful.";
-static char url [] = "For info, please visit http://www.isc.org/dhcp-contrib.html\n";
+static char url [] = "For info, please visit http://www.isc.org/products/DHCP";
 
 int main (argc, argv, envp)
 	int argc;
@@ -105,6 +121,8 @@ int main (argc, argv, envp)
 	struct server_list *sp = (struct server_list *)0;
 	int no_daemon = 0;
 	int quiet = 0;
+	isc_result_t status;
+	char *s;
 
 #ifdef SYSLOG_4_2
 	openlog ("dhcrelay", LOG_NDELAY);
@@ -129,7 +147,7 @@ int main (argc, argv, envp)
  		} else if (!strcmp (argv [i], "-i")) {
 			struct interface_info *tmp =
 				((struct interface_info *)
-				 dmalloc (sizeof *tmp, "specified_interface"));
+				 dmalloc (sizeof *tmp, MDL));
 			if (!tmp)
 				log_fatal ("Insufficient memory to %s %s",
 				       "record interface", argv [i]);
@@ -183,8 +201,8 @@ int main (argc, argv, envp)
 				}
 			}
 			if (iap) {
-				sp = (struct server_list *)
-					dmalloc (sizeof *sp, "main");
+				sp = ((struct server_list *)
+				      dmalloc (sizeof *sp, MDL));
 				if (!sp)
 					log_fatal ("no memory for server.\n");
 				sp -> next = servers;
@@ -195,14 +213,19 @@ int main (argc, argv, envp)
  		}
 	}
 
+	if ((s = getenv ("PATH_DHCRELAY_PID"))) {
+		path_dhcrelay_pid = s;
+	}
+
 	if (!quiet) {
 		log_info ("%s %s", message, DHCP_VERSION);
 		log_info (copyright);
 		log_info (arr);
-		log_info (contrib);
 		log_info (url);
-	} else
+	} else {
+		quiet = 0;
 		log_perror = 0;
+	}
 
 	/* Default to the DHCP/BOOTP port. */
 	if (!local_port) {
@@ -231,6 +254,12 @@ int main (argc, argv, envp)
 
 	/* Get the current time... */
 	GET_TIME (&cur_time);
+
+	/* Set up the OMAPI. */
+	status = omapi_init ();
+	if (status != ISC_R_SUCCESS)
+		log_fatal ("Can't initialize OMAPI: %s",
+			   isc_result_totext (status));
 
 	/* Discover all the network interfaces. */
 	discover_interfaces (DISCOVER_RELAY);
@@ -283,7 +312,7 @@ int main (argc, argv, envp)
 void relay (ip, packet, length, from_port, from, hfrom)
 	struct interface_info *ip;
 	struct dhcp_packet *packet;
-	int length;
+	unsigned length;
 	unsigned int from_port;
 	struct iaddr from;
 	struct hardware *hfrom;
@@ -298,11 +327,6 @@ void relay (ip, packet, length, from_port, from, hfrom)
 		return;
 	}
 
-	/* XXX Dave:
-	   If you're using the circuit ID to figure out where to
-	   send the reply, you can delete the following code,
-	   but you still need to validate the giaddr and drop the
-	   packet if it's bogus. */
 	/* Find the interface that corresponds to the giaddr
 	   in the packet. */
 	if (packet -> giaddr.s_addr) {
@@ -331,11 +355,9 @@ void relay (ip, packet, length, from_port, from, hfrom)
 		to.sin_len = sizeof to;
 #endif
 
-		memcpy (hto.haddr, packet -> chaddr,
-			(packet -> hlen > sizeof hto.haddr
-			 ? sizeof hto.haddr
-			 : packet -> hlen));
-		hto.htype = packet -> htype;
+		memcpy (&hto.hbuf [1], packet -> chaddr, packet -> hlen);
+		hto.hbuf [0] = packet -> htype;
+		hto.hlen = packet -> hlen + 1;
 
 		/* Wipe out the agent relay options and, if possible, figure
 		   out which interface to use based on the contents of the
@@ -415,12 +437,14 @@ static void usage ()
 	       "                [server1 [... serverN]]");
 }
 
-void cleanup ()
-{
-}
-
 int write_lease (lease)
 	struct lease *lease;
+{
+	return 1;
+}
+
+int write_host (host)
+	struct host_decl *host;
 {
 	return 1;
 }
@@ -440,10 +464,10 @@ void dhcp (packet)
 {
 }
 
-struct subnet *find_subnet (addr)
-	struct iaddr addr;
+int find_subnet (struct subnet **sp,
+		 struct iaddr addr, const char *file, int line)
 {
-	return (struct subnet *)0;
+	return 0;
 }
 
 /* Strip any Relay Agent Information options from the DHCP packet
@@ -454,7 +478,7 @@ struct subnet *find_subnet (addr)
 int strip_relay_agent_options (in, out, packet, length)
 	struct interface_info *in, **out;
 	struct dhcp_packet *packet;
-	int length;
+	unsigned length;
 {
 	int is_dhcp = 0;
 	u_int8_t *op, *sp, *max;
@@ -517,7 +541,7 @@ int strip_relay_agent_options (in, out, packet, length)
 			/* Skip over other options. */
 		      default:
 			if (sp != op)
-				memcpy (sp, op, op [1] + 2);
+				memcpy (sp, op, (unsigned)(op [1] + 2));
 			sp += op [1] + 2;
 			op += op [1] + 2;
 			break;
@@ -574,7 +598,7 @@ int find_interface_by_agent_option (packet, out, buf, len)
 {
 	int i;
 	u_int8_t *circuit_id = 0;
-	int circuit_id_len;
+	unsigned circuit_id_len;
 	struct interface_info *ip;
 
 	while (i < len) {
@@ -634,6 +658,7 @@ int find_interface_by_agent_option (packet, out, buf, len)
 int add_relay_agent_options (ip, packet, length, giaddr)
 	struct interface_info *ip;
 	struct dhcp_packet *packet;
+	unsigned length;
 	struct in_addr giaddr;
 {
 	int is_dhcp = 0, agent_options_present = 0;
@@ -707,7 +732,7 @@ int add_relay_agent_options (ip, packet, length, giaddr)
 		      default:
 			end_pad = 0;
 			if (sp != op)
-				memcpy (sp, op, op [1] + 2);
+				memcpy (sp, op, (unsigned)(op [1] + 2));
 			sp += op [1] + 2;
 			op += op [1] + 2;
 			break;
@@ -749,7 +774,7 @@ int add_relay_agent_options (ip, packet, length, giaddr)
 	if (ip -> remote_id) {
 		*sp++ = RAI_REMOTE_ID;
 		if (ip -> remote_id_len > 255 || ip -> remote_id_len < 1)
-			log_fatal ("completely bogus remote id length %d on %s\n",
+			log_fatal ("bogus remote id length %d on %s\n",
 			       ip -> circuit_id_len, ip -> name);
 		*sp++ = ip -> remote_id_len;
 		memcpy (sp, ip -> remote_id, ip -> remote_id_len);
