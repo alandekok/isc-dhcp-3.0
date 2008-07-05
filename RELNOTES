@@ -1,6 +1,6 @@
 	      Internet Systems Consortium DHCP Distribution
-			      Version 3.0.6
-			      June 29, 2007
+			     Version 3.0.7b1
+			    February 27, 2007
 
 			      Release Notes
 
@@ -78,6 +78,65 @@ Murrell at BC Tel Advanced Communications.  I'd like to express my
 thanks to all of these good people here, both for working on the code
 and for prodding me into improving it.
 
+
+			Changes since 3.0.6
+
+- Fixed "--version" flag in dhcrelay.
+
+- Clarified error message when lease limit exceeded
+
+- Fixed a buffer overflow error which could have allowed a denial
+  of service under unusual server configurations
+
+- Bug in octal parsing fixed. Thanks to Bernd Fuhrmann for the report
+  and fix.
+
+- The warning logged when an address range doesn't fit in the subnets
+  they were declared has been updated to be more helpful and identify the
+  typo in configuration that created the spanning addresses.
+
+- The 'min-secs' configuration parameter's log message has been updated to
+  be more helpful.
+
+- Fixed a bug in which write_lease() might report a failure incorrectly.
+
+- Bug in server configuration parser caused server to get stuck on
+  startup for certain bad pool declarations. Thanks to Guillaume
+  Knispel for the bug report and fix.
+
+- Fixed file descriptor leak on listen failure. Thanks to Tom Clark.
+
+- Failover binding acks are now transmitted before new binding updates (which
+  may, very rarely, be related to a lease on the ack queue).  This eliminates
+  a lease database inconsistency bug, as the remote system relies upon the
+  most recent message it received from its peer.
+
+- POOLREQ messages received within 30 seconds of one another are ignored.
+
+- 'lease imbalance' messages are not logged unless rebalance was actually
+  attempted ("ten percent" rule).
+
+- A bug was fixed where the 'giaddr' may be used to find the client's subnet
+  rather than its own 'ciaddr'.
+
+- A log message was introduced to clarify the situation where a failover
+  'address' parameter (the server's local address) did not resolve to an
+  IPv4 address.
+
+- When server is configured with options that it overrides, a warning is
+  issued when the configuration file is read, rather than at the time the
+  option is overridden. This was important, because the warning was given
+  every time the option was overridden, which could create a lot of
+  unnecessary logging.
+
+- When a failover server suspects it has encountered a peer running a
+  version 3.1.x failover server, a warning that the failover wire protocol
+  is incompatible is printed.
+
+- The failover server no longer issues a floating point error if it encounters
+  a previously undefined option code.
+
+- A memory leak when using omapi has been fixed.
 
 			Changes since 3.0.6rc1
 
@@ -1217,7 +1276,6 @@ and for prodding me into improving it.
   using omapi to manipulate leases.
 
 - Fix some bugs and omissions in omshell.
-
 
 		Changes since 3.0 Release Candidate 5
 

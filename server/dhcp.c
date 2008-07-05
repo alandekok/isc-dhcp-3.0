@@ -3,7 +3,7 @@
    DHCP Protocol engine. */
 
 /*
- * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2008 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: dhcp.c,v 1.192.2.68 2007/04/26 22:57:53 dhankins Exp $ Copyright (c) 2004-2007 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhcp.c,v 1.192.2.72 2008/01/22 17:28:24 dhankins Exp $ Copyright (c) 2004-2008 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -931,20 +931,23 @@ void dhcpinform (packet, ms_nulltp)
 	struct dhcp_packet raw;
 	struct packet outgoing;
 	unsigned char dhcpack = DHCPACK;
-	struct subnet *subnet = (struct subnet *)0;
+	struct subnet *subnet = NULL;
 	struct iaddr cip, gip;
 	unsigned i, j;
 	int nulltp;
 	struct sockaddr_in to;
 	struct in_addr from;
+	isc_boolean_t zeroed_ciaddr;
 
 	/* The client should set ciaddr to its IP address, but apparently
 	   it's common for clients not to do this, so we'll use their IP
 	   source address if they didn't set ciaddr. */
 	if (!packet -> raw -> ciaddr.s_addr) {
+		zeroed_ciaddr = ISC_TRUE;
 		cip.len = 4;
 		memcpy (cip.iabuf, &packet -> client_addr.iabuf, 4);
 	} else {
+		zeroed_ciaddr = ISC_FALSE;
 		cip.len = 4;
 		memcpy (cip.iabuf, &packet -> raw -> ciaddr, 4);
 	}
@@ -970,19 +973,25 @@ void dhcpinform (packet, ms_nulltp)
 	}
 
 	/* Find the subnet that the client is on. */
-	if (gip.len) {
+	if (zeroed_ciaddr && (gip.len != 0)) {
 		/* XXX - do subnet selection relay agent suboption here */
 		find_subnet(&subnet, gip, MDL);
+
+		if (subnet == NULL) {
+			log_info("%s: unknown subnet for relay address %s",
+				 msgbuf, piaddr(gip));
+			return;
+		}
 	} else {
 		/* XXX - do subnet selection (not relay agent) option here */
 		find_subnet(&subnet, cip, MDL);
-	}
 
-	/* Sourceless packets don't make sense here. */
-	if (!subnet) {
-		log_info ("%s: unknown subnet for address %s",
-			  msgbuf, gip.len ? piaddr(gip) : piaddr(cip));
-		return;
+		if (subnet == NULL) {
+			log_info("%s: unknown subnet for %s address %s",
+				 msgbuf, zeroed_ciaddr ? "source" : "client",
+				 piaddr(cip));
+			return;
+		}
 	}
 
 	/* We don't respond to DHCPINFORM packets if we're not authoritative.
@@ -1749,9 +1758,10 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 					   &lease -> scope, oc, MDL)) {
 			if (d1.len &&
 			    ntohs (packet -> raw -> secs) < d1.data [0]) {
-				log_info ("%s: %d secs < %d", msg,
-					  ntohs (packet -> raw -> secs),
-					  d1.data [0]);
+				log_info("%s: configured min-secs value (%d) "
+					 "is greater than secs field (%d).  "
+					 "message dropped.", msg, d1.data[0],
+					 ntohs(packet->raw->secs));
 				data_string_forget (&d1, MDL);
 				free_lease_state (state, MDL);
 				if (host)
@@ -2461,9 +2471,6 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 
 		putULong(state->expiry, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_LEASE_TIME;
-		if (lookup_option (&dhcp_universe, state -> options, i))
-			log_error ("dhcp-lease-time option for %s overridden.",
-			      inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
 			if (make_const_data(&oc->expression, state->expiry,
@@ -2479,9 +2486,6 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 		offered_lease_time /= 2;
 		putULong(state->renewal, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_RENEWAL_TIME;
-		if (lookup_option (&dhcp_universe, state -> options, i))
-			log_error ("overriding dhcp-renewal-time for %s.",
-				   inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
 			if (make_const_data(&oc->expression, state->renewal,
@@ -2498,9 +2502,6 @@ void ack_lease (packet, lease, offer, when, msg, ms_nulltp, hp)
 				       + offered_lease_time / 4);
 		putULong(state->rebind, (u_int32_t)offered_lease_time);
 		i = DHO_DHCP_REBINDING_TIME;
-		if (lookup_option (&dhcp_universe, state -> options, i))
-			log_error ("overriding dhcp-rebinding-time for %s.",
-			      inet_ntoa (state -> ciaddr));
 		oc = (struct option_cache *)0;
 		if (option_cache_allocate (&oc, MDL)) {
 			if (make_const_data(&oc->expression, state->rebind,

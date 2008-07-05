@@ -3,7 +3,7 @@
    DHCP Client. */
 
 /*
- * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2008 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1995-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -32,7 +32,7 @@
 
 #ifndef lint
 static char ocopyright[] =
-"$Id: dhclient.c,v 1.129.2.36 2007/05/01 20:42:55 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: dhclient.c,v 1.129.2.39 2008/01/22 17:28:23 dhankins Exp $ Copyright (c) 2004-2008 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -61,7 +61,7 @@ struct in_addr giaddr;
    assert (state_is == state_shouldbe). */
 #define ASSERT_STATE(state_is, state_shouldbe) {}
 
-static char copyright[] = "Copyright 2004-2007 Internet Systems Consortium.";
+static char copyright[] = "Copyright 2004-2008 Internet Systems Consortium.";
 static char arr [] = "All rights reserved.";
 static char message [] = "Internet Systems Consortium DHCP Client";
 static char url [] = "For info, please visit http://www.isc.org/sw/dhcp/";
@@ -253,10 +253,8 @@ int main (argc, argv, envp)
 			oldpid = (pid_t)temp;
 
 			if (e != 0 && e != EOF) {
-				if (oldpid) {
-					if (kill(oldpid, SIGTERM) == 0)
-						unlink(path_dhclient_pid);
-				}
+				if (oldpid)
+					kill(oldpid, SIGTERM);
 			}
 			fclose(pidfd);
 		}
@@ -1246,7 +1244,7 @@ struct client_lease *packet_to_lease (packet, client)
 	if (!(i & 2) && packet -> raw -> sname [0]) {
 		unsigned len;
 		/* Don't count on the NUL terminator. */
-		for (len = 0; len < 64; len++)
+		for (len = 0; len < DHCP_SNAME_LEN; len++)
 			if (!packet -> raw -> sname [len])
 				break;
 		lease -> server_name = dmalloc (len + 1, MDL);
@@ -1265,7 +1263,7 @@ struct client_lease *packet_to_lease (packet, client)
 	if (!(i & 1) && packet -> raw -> file [0]) {
 		unsigned len;
 		/* Don't count on the NUL terminator. */
-		for (len = 0; len < 64; len++)
+		for (len = 0; len < DHCP_FILE_LEN; len++)
 			if (!packet -> raw -> file [len])
 				break;
 		lease -> filename = dmalloc (len + 1, MDL);

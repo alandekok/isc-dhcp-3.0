@@ -3,7 +3,7 @@
    Failover protocol support code... */
 
 /*
- * Copyright (c) 2004-2007 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2004-2008 by Internet Systems Consortium, Inc. ("ISC")
  * Copyright (c) 1999-2003 by Internet Software Consortium
  *
  * Permission to use, copy, modify, and distribute this software for any
@@ -34,7 +34,7 @@
 
 #ifndef lint
 static char copyright[] =
-"$Id: failover.c,v 1.53.2.48 2007/05/01 20:42:56 each Exp $ Copyright (c) 2004-2006 Internet Systems Consortium.  All rights reserved.\n";
+"$Id: failover.c,v 1.53.2.54 2008/01/22 17:30:46 dhankins Exp $ Copyright (c) 2004-2008 Internet Systems Consortium.  All rights reserved.\n";
 #endif /* not lint */
 
 #include "dhcpd.h"
@@ -247,6 +247,9 @@ isc_result_t dhcp_failover_link_initiate (omapi_object_t *h)
 		}
 	} else {
 		if (ds.len != sizeof (struct in_addr)) {
+			log_error("failover peer %s: 'address' parameter "
+				  "fails to resolve to an IPv4 address",
+				  state->name);
 			data_string_forget (&ds, MDL);
 			dhcp_failover_link_dereference (&obj, MDL);
 			omapi_addr_list_dereference (&addrs, MDL);
@@ -590,6 +593,7 @@ static isc_result_t do_a_failover_option (c, link)
 	unsigned char *op;
 	unsigned op_size;
 	unsigned op_count;
+	unsigned op_type;
 	int i;
 	isc_result_t status;
 	
@@ -617,7 +621,8 @@ static isc_result_t do_a_failover_option (c, link)
 	}
 
 	/* If it's an unknown code, skip over it. */
-	if (option_code > FTO_MAX) {
+	if ((option_code > FTO_MAX) ||
+	    (ft_options[option_code].type == FT_UNDEF)) {
 #if defined (DEBUG_FAILOVER_MESSAGES)
 		log_debug ("  option code %d (%s) len %d (not recognized)",
 			   option_code,
@@ -679,11 +684,28 @@ static isc_result_t do_a_failover_option (c, link)
 		op_count = ft_options [option_code].num_present;
 
 		if (option_len != op_size * op_count) {
-			log_error ("FAILOVER: option size (%d:%d), option %s",
+			char *logincompat = "";
+
+			/*
+			 * Versions 3.1.0 and onwards were updated to track
+			 * the IETF draft on failover (-12), which alphabetized
+			 * and then renumbered many of the option codes.  One
+			 * option code, 27 or TLS_REQUEST, was not renumbered
+			 * by a fluke of how the alphabetization worked out,
+			 * but was clarified to be one byte in length rather
+			 * than 2.
+			 */
+			if ((option_code == 27) && (option_len == 1)) {
+				logincompat = "...please verify that the peer "
+					      "is running any 3.0.x version, "
+					      "and not 3.1.0 or onwards which "
+					      "are not reverse compatible.";
+			}
+			log_error ("FAILOVER: option size (%d:%d), option %s%s",
 				   option_len,
 				   (ft_sizes [ft_options [option_code].type] *
 				    ft_options [option_code].num_present),
-				   ft_options [option_code].name);
+				   ft_options [option_code].name, logincompat);
 			return ISC_R_PROTOCOLERROR;
 		}
 	} else {
@@ -2194,6 +2216,12 @@ int dhcp_failover_pool_rebalance (dhcp_failover_state_t *state)
 	if (state -> me.state != normal || state -> i_am == secondary)
 		return 0;
 
+	/* Do not respond to POOLREQ messages more than once per 30s per
+	 * failover peer.
+	 */
+	if ((state->last_POOLREQ + 30) > cur_time)
+		return 0;
+
 	for (s = shared_networks; s; s = s -> next) {
 	    for (p = s -> pools; p; p = p -> next) {
 		if (p -> failover_peer != state)
@@ -2258,15 +2286,16 @@ int dhcp_failover_pool_rebalance (dhcp_failover_state_t *state)
 		    if (lp)
 			lease_dereference (&lp, MDL);
 
-		}
-		if (lts > 1) {
-			log_info ("lease imbalance - lts = %d", lts);
+		    if (lts > 1) {
+			log_info("lease imbalance - lts = %d", lts);
+		    }
 		}
 	    }
 	}
 	commit_leases();
 	dhcp_failover_send_poolresp (state, leases_queued);
 	dhcp_failover_send_updates (state);
+	state->last_POOLREQ = cur_time;
 	return leases_queued;
 }
 
@@ -2352,6 +2381,12 @@ isc_result_t dhcp_failover_send_updates (dhcp_failover_state_t *state)
 	/* Can't update peer if we're not talking to it! */
 	if (!state -> link_to_peer)
 		return ISC_R_SUCCESS;
+
+	/* If there are acks pending, transmit them prior to potentialy
+	 * sending new updates for the same lease.
+	 */
+	if (state->toack_queue_head != NULL)
+	        dhcp_failover_send_acks(state);
 
 	while ((state -> partner.max_flying_updates >
 		state -> cur_unacked_updates) && state -> update_queue_head) {
