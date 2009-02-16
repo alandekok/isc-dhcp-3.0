@@ -1,0 +1,36 @@
+ISC DHCP 3.0.1rc11 for CYGWIN
+
+This package contains the ISC's reference DHCP server/client
+implementation version 3.0.1rc11. The original sources have
+been patched to make it work in the CYGWIN environment.
+
+If you have the development tools installed, then you should
+be able to do the simple commands
+
+	$ ./configure 
+	$ make 
+	$ make install
+
+Unlike other projects, configure does not take a 
+'--prefix=<dir>' command-line option to change the install
+prefix. At install time, however, a prefix can be provided 
+by defining the DESTDIR macro on the command line, like this
+
+	make DESTDIR=/tmp/dhcp install
+
+Most of the work to make this project work in the CYGWIN
+environment was contributed by Mike Westkamper of WEI Inc. 
+with some further modification by Brett Hunt of Micron
+Technology, Inc.
+
+Please see the example dhcpd.conf for how to set up a multi-
+homed workstation to only listen on one interface. 
+Specifically, you need to use the 'local-address' directive.
+
+The leases file will be stored in /var/spool/dhcp. Before
+starting the DHCP server (dhcpd) you must create the leases
+file. eg. touch /var/spool/dhcp/dhcpd.leases
+
+The configuration file will be stored in /etc/dhcpd.conf
+
+This file was created 3 Feb 2003 by Brett Hunt

@@ -103,6 +103,6 @@ dhcpd.leases.man5:	dhcpd.leases.5
 		-e "s#RUNDIR#$(VARRUN)#g" < dhcpd.leases.5 >dhcpd.leases.man5
 
 dhcpd:	$(OBJS) $(COBJ) $(DHCPLIB)
-	$(CC) $(LFLAGS) -o dhcpd $(OBJS) $(DHCPLIB) $(LIBS)
+	$(CC) $(LFLAGS) -o $(PROG)$(EXECEXT) $(OBJS) $(DHCPLIB) $(LIBS)
 
 # Dependencies (semi-automatically-generated)

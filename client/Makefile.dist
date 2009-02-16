@@ -128,6 +128,6 @@ dhclient.leases.cat5:	dhclient.leases.man5
 
 
 dhclient:	$(OBJS) $(DHCPLIB)
-	$(CC) $(LFLAGS) -o $(PROG) $(OBJS) $(DHCPLIB) $(LIBS)
+	$(CC) $(LFLAGS) -o $(PROG)$(EXECEXT) $(OBJS) $(DHCPLIB) $(LIBS)
 
 # Dependencies (semi-automatically-generated)

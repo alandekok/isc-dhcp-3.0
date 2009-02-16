@@ -83,6 +83,6 @@ dhcrelay.man8:	dhcrelay.8
 		-e "s#RUNDIR#$(VARRUN)#" < dhcrelay.8 >dhcrelay.man8
 
 dhcrelay:	dhcrelay.o $(DHCPLIB)
-	$(CC) $(LFLAGS) -o $(PROG) dhcrelay.o $(DHCPLIB) $(LIBS)
+	$(CC) $(LFLAGS) -o $(PROG)$(EXECEXT) dhcrelay.o $(DHCPLIB) $(LIBS)
 
 # Dependencies (semi-automatically-generated)

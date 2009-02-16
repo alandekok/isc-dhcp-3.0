@@ -45,7 +45,77 @@
 #undef FD_ISCLR
 #undef FD_SETSIZE
 #define IFNAMSIZ 16
-#include <winsock.h>
+
+#define __INSIDE_CYGWIN_NET__
+#include <cygwin/in.h>
+#include <cygwin/if.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#ifndef IFF_POINTOPOINT
+#define IFF_POINTOPOINT 0x10
+#endif
+#ifndef FD_SETSIZE
+#define FD_SETSIZE 256
+#endif	// ifndef FD_SETSIZE
+#ifndef FD_SET
+
+// typedef long fd_mask;
+
+#undef NFDBITS
+#define NFDBITS	(sizeof(fd_mask) * NBBY)	/* bits per mask */
+#ifndef howmany
+#define	howmany(x, y)	(((x)+((y)-1))/(y))
+#endif /* howmany */
+
+typedef	struct fd_set {
+	fd_mask	fds_bits[howmany(FD_SETSIZE, NFDBITS)];
+} fd_set;
+
+#define	FD_SET(n, p)	((p)->fds_bits[(n)/NFDBITS] |= (1 << ((n) % NFDBITS)))
+#define	FD_CLR(n, p)	((p)->fds_bits[(n)/NFDBITS] &= ~(1 << ((n) % NFDBITS)))
+#define	FD_ISSET(n, p)	((p)->fds_bits[(n)/NFDBITS] & (1 << ((n) % NFDBITS)))
+#define FD_ZERO(p)	memset((char *)(p), '\0', sizeof(*(p)))
+
+#endif /* FD_SET */
+#ifdef NEED_PRAND_CONF
+const char *cmds[] = {
+	"/bin/ps -axlw 2>&1",
+	"/sbin/arp -an 2>&1",
+	"/bin/netstat -an 2>&1",
+	"/bin/df  2>&1",
+	"/usr/bin/dig com. soa +ti=1 +retry=0 2>&1",
+	"/usr/bin/uptime  2>&1",
+	"/bin/netstat -s 2>&1",
+	"/usr/bin/dig . soa +ti=1 +retry=0 2>&1",
+	"/usr/bin/vmstat  2>&1",
+	"/usr/bin/w  2>&1",
+	NULL
+};
+const char *files[] = {
+	"/proc/stat",
+	"/proc/rtc",
+	"/proc/meminfo",
+	"/proc/interrupts",
+	"/proc/self/status",
+	"/var/log/messages",
+	"/var/log/wtmp",
+	"/var/log/lastlog",
+	NULL
+};
+const char *dirs[] = {
+	"/tmp",
+	"/usr/tmp",
+	".",
+	"/",
+	"/var/spool",
+	"/dev",
+	"/var/spool/mail",
+	"/home",
+	"/usr/home",
+	NULL
+};
+#endif	/* NEED_PRAND_CONF */
+#define GET_HOST_ID_MISSING 1
 
 #include <syslog.h>
 #include <string.h>
@@ -73,29 +143,29 @@
 #define NO_SNPRINTF
 
 #ifndef _PATH_DHCPD_PID
-#define _PATH_DHCPD_PID	"//e/etc/dhcpd.pid"
+#define _PATH_DHCPD_PID	"/var/run/dhcpd.pid"
 #endif
 #ifndef _PATH_DHCPD_DB
-#define _PATH_DHCPD_DB "//e/etc/dhcpd.leases"
+#define _PATH_DHCPD_DB "/var/spool/dhcp/dhcpd.leases"
 #endif
 #ifndef _PATH_DHCPD_CONF
-#define _PATH_DHCPD_CONF "//e/etc/dhcpd.conf"
+#define _PATH_DHCPD_CONF "/etc/dhcpd.conf"
 #endif
 #ifndef _PATH_DHCLIENT_PID
-#define _PATH_DHCLIENT_PID "//e/etc/dhclient.pid"
+#define _PATH_DHCLIENT_PID "/var/run/dhclient.pid"
 #endif
 #ifndef _PATH_DHCLIENT_DB
-#define _PATH_DHCLIENT_DB "//e/etc/dhclient.leases"
+#define _PATH_DHCLIENT_DB "/var/spool/dhcp/dhclient.leases"
 #endif
 #ifndef _PATH_DHCLIENT_CONF
-#define _PATH_DHCLIENT_CONF "//e/etc/dhclient.conf"
+#define _PATH_DHCLIENT_CONF "/etc/dhclient.conf"
 #endif
 #ifndef _PATH_DHCRELAY_PID
-#define _PATH_DHCRELAY_PID "//e/etc/dhcrelay.pid"
+#define _PATH_DHCRELAY_PID "/var/run/dhcrelay.pid"
 #endif
 
 #ifndef _PATH_RESOLV_CONF
-#define _PATH_RESOLV_CONF "//e/etc/resolv.conf"
+#define _PATH_RESOLV_CONF "/etc/resolv.conf"
 #endif
 
 #define int8_t		char

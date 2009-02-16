@@ -44,7 +44,6 @@
 
 #include <netdb.h>
 #else
-#define fd_set cygwin_fd_set
 #include <sys/types.h>
 #endif
 #include <fcntl.h>

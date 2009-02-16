@@ -196,7 +196,7 @@ void do_percentm (obuf, ibuf)
 	while (*s) {
 		if (infmt) {
 			if (*s == 'm') {
-#ifndef __CYGWIN32__
+#if 1
 				m = strerror (errno);
 #else
 				m = pWSAError ();

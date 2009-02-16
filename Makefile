@@ -42,6 +42,10 @@ install:
 	   echo No build directory for $$sysname - please run ./configure.; \
 	else \
 	   (cd work.$$sysname; make install); \
+	fi; \
+	if [ "$$sysname" = "cygwin" ]; then \
+	   mkdir -p ${DESTDIR}/usr/doc/Cygwin; \
+	   cp CYGWIN-PATCHES/*.README ${DESTDIR}/usr/doc/Cygwin; \
 	fi
 
 depend:

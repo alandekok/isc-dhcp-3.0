@@ -1,0 +1,11 @@
+prev: 3.0.1rc10-1
+curr: 3.0.1rc11-1
+category: System
+requires: cygwin
+sdesc:    "ISC DHCP reference implementation"
+ldesc:    "ISC DHCP reference server and client.
+Intended for use as a dhcp server. The client,
+relay, and OMAPI portions have not been tested.
+The DHCP should be configured with the 
+local-address directive if it is to be used on
+a system with multiple interface cards."

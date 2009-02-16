@@ -47,6 +47,17 @@ if [ "$sysname" = "" ]; then
         sysname_print=sco
       fi
     ;;
+    CYGWIN_NT-5.1)
+      # Windows XP
+      sysname=cygwin;;
+    CYGWIN_NT-5.0)
+      # Windows 2000
+      sysname=cygwin;;
+    CYGWIN_NT-4.0)
+      # Windows NT 4.0
+      sysname=cygwin;;
+    cygwin)
+      sysname=cygwin;;
     AIX)
       sysname=aix;;
     Darwin)

@@ -1140,3 +1140,33 @@ res_servicename(u_int16_t port, const char *proto) {	/* Host byte order. */
 	}
 	return (ss->s_name);
 }
+
+#ifdef __CYGWIN32__
+void setservent(int i)
+{
+}
+
+struct servent * getservent()
+{
+	return NULL;
+}
+
+void endservent()
+{
+}
+
+void setprotoent(int i)
+{
+}
+
+void endprotoent()
+{
+}
+
+struct protoent * getprotoent()
+{
+	return NULL;
+}
+
+#endif
+
