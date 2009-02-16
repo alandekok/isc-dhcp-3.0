@@ -375,6 +375,12 @@ int find_hosts_by_haddr (struct host_decl **hp, int htype,
 {
 	struct host_decl *foo;
 	struct hardware h;
+	int ret;
+
+#if defined(LDAP_CONFIGURATION)
+	if ((ret = find_haddr_in_ldap (hp, htype, hlen, haddr, file, line)))
+		return ret;
+#endif
 
 	h.hlen = hlen + 1;
 	h.hbuf [0] = htype;

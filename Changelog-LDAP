@@ -1,0 +1,251 @@
+2007-2-23 Brian Masney <masneyb@ntelos.net>
+	* contrib/dhcpd-conf-to-ldap.pl - fixed a parsing bug in which
+	didn't handle correctly quoted string containing spaces.
+	(Rapha?l Luta <raphael.luta@aptiwan.com>)
+
+	* dst/Makefile.dist server/Makefile.dist site.conf - updated build
+	method when using -lssl.
+	(from Marius Tomaschewski <mt@suse.de>)
+
+	* server/ldap.c - fix for ldap_read_function to avoid returning
+	empty strings (skipped host declaration from ldap) that are causing
+	parsing errors in ldap-dynamic mode.
+	(from Marius Tomaschewski <mt@suse.de>)
+
+	* includes/dhcpd.h README.ldap server/dhcpd.c server/ldap.c
+	server/stables.c - added ldap-ssl <off|start_tls|ldaps|on> option and
+        several ldap-tls* options, that are described in the "man ldap.conf".
+	(from Marius Tomaschewski <mt@suse.de>)
+
+	* includes/dhcpd.h server/ldap.c server/stables.c - added ldap-referrals
+	<on|off> option. Also implemented a LDAP rebuind function
+	(from Kalyan <skalyanasundaram@novell.com>)
+
+	* includes/dhcpd.h server/ldap.c server/stables.c - renamed dhcpd.conf
+	option ldap-server-cn to ldap-dhcp-server-cn
+	(from Marius Tomaschewski <mt@suse.de>)
+
+	* contrib/dhcp.schema - schema updates 
+	(from Kalyan <skalyanasundaram@novell.com>)
+
+	* server/ldap.c server/ldap_casa.c - CASA support fixes
+	(from Marius Tomaschewski <mt@suse.de>)
+
+	* server/ldap.c - added strncat() fix
+	(from Marius Tomaschewski <mt@suse.de>)
+
+2006-12-15 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_read_config) - unbind from the LDAP server after
+	the config file has been ran if the server is being ran in static mode
+	(from Tomas Hoger <thoger@pobox.sk>)
+
+	* server/ldap.c (ldap_read_function) - fixed bug where the entire
+	configuration was not being processed in the LDAP directory.
+
+	* server/ldap.c - added the following functions for reading values
+	from the config file: _do_lookup_dhcp_string_option(),
+	_do_lookup_dhcp_int_option() and _do_lookup_dhcp_enum_option(). This
+	helped to clean up ldap_start() start a bit. Also, various small
+	formatting changes to the code.
+
+2006-12-15 Marius Tomaschewski <mt@suse.de>
+	* Changelog-LDAP - Added / changed some of entries in
+	Changelog-LDAP, e.g.  changes to the dhcpServer and
+	dhcpService objectclasses in schema file was not mentioned.
+
+        * server/ldap.c Some a little bit paranoid checks to strchr results
+	in the group patch, avoided allocation of groupname using snprintf
+	with a "%.*s" format.
+
+        * server/ldap.c - Readded FIXME comment about one space in
+	dhcpHWAddress.
+
+        * server/ldap.c Changed "dhcpdnsZone" and "dhcpdnszoneServer" into
+	"dhcpDnsZone" and "dhcpDnsZoneServer".
+
+        * Fixed memory leak in ldap_parse_zone (dfree of keyCn), added checks
+	for dmalloc and strchr results.
+
+	* ldap_casa.c, ldap_casa.h - surrounded content of ldap_casa.h and
+	ldap_casa.c with if defined(LDAP_CASA_AUTH).
+
+	* contrib/dhcp.schema  - Reverted the equality change for dhcpOption.
+	The dhcp options are case-insensitive in dhcpd.conf.
+
+	* Changed "dhcpdnsZone" and "dhcpdnszoneServer" into "dhcpDnsZone"
+	and "dhcpDnsZoneServer".
+
+	* Changed "FQDNs" into "DNs" in dhcpLocatorDN description (DN is already
+	absolute, RDN is relative DN, FQDN means a full qualified domain name).
+
+2006-12-15 Kalyan <skalyanasundaram@novell.com>
+	* includes/ldap_casa.h server/ldap_casa.c - updated to support CASA
+	1.7
+
+2006-8-15 Kalyan <skalyanasundaram@novell.com>
+	* server/ldap.c (ldap_parse_options) - fetch option from the group
+	if the host belongs to that group in the dynamic method.
+
+	* contrib/dhcp.schema - modified dhcpServiceDN attribute in dhcpServer
+	objectclasses to be optional instead of mandatory
+
+	* contrib/dhcp.schema - modified dhcpPrimaryDN attribute in dhcpService
+	objectclasses to be optional instead of mandatory
+
+	* contrib/dhcp.schema - schema has been updated with
+	new objectclasses dhcpLocator,dhcpTsigKey,dhcpdnsZone,dhcpFailOver and
+	many attributes.
+
+	* contrib/dhcp.schema - dhcpHWAddress's equality has been modified to
+	caseIgnoreIA5Match.
+
+	* server/ldap.c - added support for reading the dhcpTsigKey and
+	dhcpdnsZone objects. 
+
+	* server/ldap.c (ldap_parse_options) Fetch option from the group if
+	the host belongs to that group in the dynamic method.
+
+	* server/ldap.c - CASA authentication is enabled.
+
+	* server/ldap.c - introduced new attribute ldap-server-cn to mention
+	the dhcpServer object name in configuration.
+
+2006-7-17 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_read_function) - fixes for reading the data
+	from the LDAP tree in some cases (patch from
+	Darrin Smith <beldin@beldin.org>)
+
+2006-3-17 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_read_function) - added patch from 
+	Dmitriy Bogun <kabanyura@gmail.com>. This patch fixes a bug when
+	EOF wasn't returned in some cases.
+
+2005-9-26 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_start) - added support for reading the
+	ldap-port option. This option was not being used.
+
+2005-5-24 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_parse_host) - allow dhcpHost entries that do
+	not have a hardware address associated with them
+
+2005-4-11 Brian Masney <masneyb@ntelos.net>
+	* README.ldap - updated directions on how to use LDAP over SSL on
+	non-Linux machines
+
+2005-2-23 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_generate_config_string) - do a case insensitive
+	string comparsion when comparing the object classes
+
+2004-11-8 Brian Masney <masneyb@ntelos.net>
+	* debian/control - updated the depends and build-depends line
+	(from Andrew Pollock <me@andrew.net.au>)
+
+2004-10-13 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c (ldap_start) - allow doing an anonymous bind to the
+	LDAP server
+
+2004-9-27 Brian Masney <masneyb@ntelos.net>
+	* contrib/dhcpd-conf-to-ldap.pl - make sure the DHCP hardware address
+	is always lowercased
+
+2004-7-30 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c - added more debbuging statements. Fixed possible crash
+	that could occur whenever more than 1 external DN is added to an LDAP
+	entry. Fixed possible infinite loop when reading the external DNs.
+	(from Sebastian Hetze <s.hetze@linux-ag.de>)
+
+2004-7-1 Brian Masney <masneyb@ntelos.net>
+	* README.ldap - updated build instructions paragraph
+	(from Mason Schmitt <sysadmin@sunwave.net>)
+
+2004-6-29 Brian Masney <masneyb@ntelos.net>
+	* debian/control - set the minimum required version of the DHCP server
+	to be 3.0.1rc9
+
+	* configure - fix for sed when configure was run from an older shell
+
+2004-6-22 Brian Masney <masneyb@ntelos.net>
+	* Updated patch to use ISC DHCP 3.0.1rc14
+
+2004-5-24 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c - don't append a ; to the end of a dhcpStatement if it
+	ends in }
+
+	* server/ldap.c contrib/dhcpd-conf-to-ldap.pl - support having multiple
+	dhcpRange statements (from Marco D'Ettorre <marco.dettorre@sys-net.it>)
+
+2004-5-5 Brian Masney <masneyb@ntelos.net>
+	* server/ldap.c - added more debugging statements when
+	it is compiled in to help troubleshoot parsing errors. Don't free
+	a LDAP connection prematurely when there is a reference to another
+	LDAP tree. If the config entry ends in }, make sure a ; gets tacked
+	on
+
+	* debian/* - Updated version number. Renamed package from
+	dhcp3-ldap-ntelos to dhcp3-server-ldap.
+
+	* server/ldap.c - enclose the shared-network name in quotes so
+	that there can be shared network statements in LDAP that have spaces
+	in them
+
+	* configure - after the work directory is setup, add -lldap -llber
+	to the server Makefile
+
+Wed Apr 21 15:09:08 CEST 2004 - mt@suse.de
+	* contrib/dhcpd-conf-to-ldap.pl:
+	  - added "--conf=file" option usable instead of stdin
+	  - added "--ldif=file" option usable instead of stdout
+	  - added "--second=host|dn" option usefull for failover
+	  - added "--use=feature" option to enable extended features;
+	    currently used to enable failover (default is disabled).
+	  - extended remaining_line() to support block statements
+	  - fixed / improved failover support, added notes about
+
+	* server/ldap.c:
+	  - moved code checking statement ends to check_statement_end()
+	  - moved parsing of entry options/statements to
+	    ldap_parse_entry_options()
+	  - moved code closing debug fd into ldap_close_debug_fd()
+	  - moved code writing to debug fd into ldap_write_debug()
+	  - added support for full hostname in dhcpServer search filter
+	  - added support for multiple dhcpService entries in dhcpServer object
+	  - added parsing of options and statements for dhcpServer object
+	  - added verify if dhcpService contains server dn as primary or
+	    secondary
+	  - changed to search for dhcpHost,dhcpSubClass bellow of all
+	    dhcpService trees instead of base-dn (avoids finding of hosts in
+	    foreign configs)
+	  - fixes to free all dn's fetched by ldap_get_dn (e.g. debug output)
+	  - fixes to free ldap results, mainly in cases where no LDAP_SUCCESS
+	    returned or other error conditions happened
+	  - fixed/improved some log messages
+
+2004-3-30 Brian Masney <masneyb@ntelos.net>
+	* contrib/dhcpd-conf-to-ldap.pl - added option to control the
+	DHCP Config DN. Wrap the DHCP Statements in { }
+	This patch was contributed by Marius Tomaschewski <mt@suse.de>
+
+	* server/ldap.c - changed ldap_username and ldap_password to
+	be optional (anonymous bind is used then). Added {} block support
+	to dhcpStatements. (no ";" at end if statement ends with a "}").
+	Fixed writing to ldap-debug-file. Changed find_haddr_in_ldap() to
+	use dhcpHost objectClass in its filter
+	This patch was contributed by Marius Tomaschewski <mt@suse.de>
+
+2004-3-23 Brian Masney <masneyb@ntelos.net>
+	* contrib/dhcpd-conf-to-ldap.pl - added options for server, basedn
+	options and usage message (Net::Domain instead of SYS::Hostname).
+	Added handling of zone, authoritative and failover (config and
+	pool-refs) statements. Added numbering of groups and pools per
+	subnet. This patch was contributed by Marius Tomaschewski <mt@suse.de>
+
+2004-2-26 Brian Masney <masneyb@ntelos.net>
+	* fixed an instance where the LDAP server would restart, but the DHCP
+	server would not reconnect
+
+2004-2-18 Brian Masney <masneyb@ntelos.net>
+	* allow multiple dhcp*DN entries in the LDAP entry.
+
+2003-9-11 Brian Masney <masneyb@ntelos.net>
+	* updated patch to work with 3.0.1rc12
+

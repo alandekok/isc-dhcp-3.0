@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e 
+
+if [ "$1" = install -o "$1" = upgrade ]; then
+	if dpkg-divert --list /usr/sbin/dhcpd3 \
+		| grep -q "by dhcp3-server-ldap";
+	then
+		exit 0
+	fi
+		
+	dpkg-divert --package dhcp3-server-ldap --add --rename \
+		--divert /usr/sbin/dhcpd3-noldap /usr/sbin/dhcpd3
+fi

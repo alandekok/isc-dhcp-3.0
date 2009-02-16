@@ -1,0 +1,87 @@
+#!/usr/bin/make -f
+# Made with the iad of dh_make, by Craig Small
+# Sample debian/rules that uses debhelper. GNU copyright 1997 by Joey Hess.
+# Also some stuff taken from debmake scripts, by Cristopt Lameter.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+export DH_COMPAT=3
+
+DESTDIR = `pwd`/debian/tmp
+
+IVARS = DESTDIR=$(DESTDIR)
+
+BVARS = PREDEFINES='-D_PATH_DHCPD_DB=\"/var/lib/dhcp3/dhcpd.leases\" \
+	-D_PATH_DHCLIENT_DB=\"/var/lib/dhcp3/dhclient.leases\" \
+	-D_PATH_DHCLIENT_SCRIPT=\"/etc/dhcp3/dhclient-script\" \
+	-D_PATH_DHCPD_CONF=\"/etc/dhcp3/dhcpd.conf\" \
+        -D_PATH_DHCLIENT_CONF=\"/etc/dhcp3/dhclient.conf\"'
+
+build: build-stamp
+build-stamp:
+	dh_testdir
+
+	./configure
+	$(MAKE) $(BVARS)
+
+	touch build-stamp
+
+clean: 
+	dh_testdir
+	rm -f build-stamp install-stamp
+
+	# Add here commands to clean up after the build process.
+	-$(MAKE) distclean
+
+	# Remove leftover junk...
+	rm -Rf work.linux-2.2/
+
+	dh_clean
+
+install: install-stamp
+install-stamp: build-stamp
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	dh_installdirs
+
+	# Add here commands to install the package into debian/tmp.
+	$(MAKE) install $(IVARS)
+
+	mv $(DESTDIR)/usr/sbin/dhcpd $(DESTDIR)/usr/sbin/dhcpd3
+
+	dh_movefiles
+
+	# Remove unwanted directories that dh_movefiles leaves around
+	rmdir $(DESTDIR)/etc
+	rm -Rf $(DESTDIR)/sbin/
+	rm -Rf $(DESTDIR)/usr/bin/
+	rm -Rf $(DESTDIR)/usr/include/
+	rm -Rf $(DESTDIR)/usr/lib/
+	rm -Rf $(DESTDIR)/usr/local/
+	rm -Rf $(DESTDIR)/usr/man/
+	rm -Rf $(DESTDIR)/var/
+	rm -f $(DESTDIR)/usr/sbin/dhcrelay
+
+	touch install-stamp
+
+# Build architecture-dependent files here (this package does not contain
+#	architecture-independent files).
+binary-arch: build install
+	dh_testdir -a
+	dh_testroot -a
+	dh_strip -a
+	dh_compress -a
+	dh_fixperms -a
+	dh_installdeb -a
+	dh_shlibdeps -a
+	dh_gencontrol -a
+	dh_md5sums -a
+	dh_builddeb -a
+
+source diff:                                                                  
+	@echo >&2 'source and diff are obsolete - use dpkg-source -b'; false
+
+binary: binary-arch
+.PHONY: build clean binary-indep binary-arch binary

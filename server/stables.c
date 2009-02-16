@@ -483,6 +483,38 @@ struct option server_options [256] = {
 	{ "log-facility", "Nsyslog-facilities.",	&server_universe, 44 },
 	{ "do-forward-updates", "f",			&server_universe, 45 },
 	{ "ping-timeout", "T",				&server_universe, 46 },
+#if defined(LDAP_CONFIGURATION)
+	{ "ldap-server", "t",				&server_universe, 47 },
+	{ "ldap-port", "d",				&server_universe, 48 },
+	{ "ldap-username", "t",				&server_universe, 49 },
+	{ "ldap-password", "t",				&server_universe, 50 },
+	{ "ldap-base-dn", "t",				&server_universe, 51 },
+	{ "ldap-method", "Nldap-methods.",		&server_universe, 52 },
+	{ "ldap-debug-file", "t",			&server_universe, 53 },
+	{ "ldap-dhcp-server-cn", "t",			&server_universe, 54 },
+	{ "ldap-referrals", "f",			&server_universe, 55 },
+#if defined(USE_SSL)
+	{ "ldap-ssl", "Nldap-ssl-usage.",		&server_universe, 56 },
+	{ "ldap-tls-reqcert", "Nldap-tls-reqcert.",	&server_universe, 57 },
+	{ "ldap-tls-ca-file", "t",			&server_universe, 58 },
+	{ "ldap-tls-ca-dir", "t",			&server_universe, 59 },
+	{ "ldap-tls-cert", "t",				&server_universe, 60 },
+	{ "ldap-tls-key", "t",				&server_universe, 61 },
+	{ "ldap-tls-crlcheck", "Nldap-tls-crlcheck.",	&server_universe, 62 },
+	{ "ldap-tls-ciphers", "t",			&server_universe, 63 },
+	{ "ldap-tls-randfile", "t",			&server_universe, 64 },
+#else
+	{ "unknown-56", "X",				&server_universe, 56 },
+	{ "unknown-57", "X",				&server_universe, 57 },
+	{ "unknown-58", "X",				&server_universe, 58 },
+	{ "unknown-59", "X",				&server_universe, 59 },
+	{ "unknown-60", "X",				&server_universe, 60 },
+	{ "unknown-61", "X",				&server_universe, 61 },
+	{ "unknown-62", "X",				&server_universe, 62 },
+	{ "unknown-63", "X",				&server_universe, 63 },
+	{ "unknown-64", "X",				&server_universe, 64 },
+#endif
+#else
 	{ "unknown-47", "X",				&server_universe, 47 },
 	{ "unknown-48", "X",				&server_universe, 48 },
 	{ "unknown-49", "X",				&server_universe, 49 },
@@ -501,6 +533,7 @@ struct option server_options [256] = {
 	{ "unknown-62", "X",				&server_universe, 62 },
 	{ "unknown-63", "X",				&server_universe, 63 },
 	{ "unknown-64", "X",				&server_universe, 64 },
+#endif
 	{ "unknown-65", "X",				&server_universe, 65 },
 	{ "unknown-66", "X",				&server_universe, 66 },
 	{ "unknown-67", "X",				&server_universe, 67 },
@@ -693,6 +726,61 @@ struct option server_options [256] = {
 	{ "unknown-254", "X",				&server_universe, 254 },
 	{ "option-end", "e",				&server_universe, 255 },
 };
+
+#if defined(LDAP_CONFIGURATION)
+struct enumeration_value ldap_values [] = {
+	{ "static", LDAP_METHOD_STATIC },
+	{ "dynamic", LDAP_METHOD_DYNAMIC },
+	{ (char *) 0, 0 }
+};
+
+struct enumeration ldap_methods = {
+	(struct enumeration *)0,
+	"ldap-methods",
+	ldap_values
+};
+
+#if defined(USE_SSL)
+struct enumeration_value ldap_ssl_usage_values [] = {
+	{ "off",       LDAP_SSL_OFF  },
+	{ "on",        LDAP_SSL_ON   },
+	{ "ldaps",     LDAP_SSL_LDAPS},
+	{ "start_tls", LDAP_SSL_TLS  },
+	{ (char *) 0, 0 }
+};
+struct enumeration ldap_ssl_usage_enum = {
+	(struct enumeration *)0,
+	"ldap-ssl-usage",
+	ldap_ssl_usage_values
+};
+
+struct enumeration_value ldap_tls_reqcert_values [] = {
+	{ "never",  LDAP_OPT_X_TLS_NEVER },
+	{ "hard",   LDAP_OPT_X_TLS_HARD  },
+	{ "demand", LDAP_OPT_X_TLS_DEMAND},
+	{ "allow",  LDAP_OPT_X_TLS_ALLOW },
+	{ "try",    LDAP_OPT_X_TLS_TRY   },
+	{ (char *) 0, 0 }
+};
+struct enumeration ldap_tls_reqcert_enum = {
+	(struct enumeration *)0,
+	"ldap-tls-reqcert",
+	ldap_tls_reqcert_values
+};
+
+struct enumeration_value ldap_tls_crlcheck_values [] = {
+	{ "none", LDAP_OPT_X_TLS_CRL_NONE},
+	{ "peer", LDAP_OPT_X_TLS_CRL_PEER},
+	{ "all",  LDAP_OPT_X_TLS_CRL_ALL },
+	{ (char *) 0, 0 }
+};
+struct enumeration ldap_tls_crlcheck_enum = {
+	(struct enumeration *)0,
+	"ldap-tls-crlcheck",
+	ldap_tls_crlcheck_values
+};
+#endif
+#endif
 
 struct enumeration_value ddns_styles_values [] = {
 	{ "none", 0 },

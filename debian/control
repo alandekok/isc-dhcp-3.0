@@ -1,0 +1,12 @@
+Source: dhcp3-server-ldap
+Section: net
+Priority: optional
+Maintainer: Brian Masney <masneyb@gftp.org>
+Build-Depends: debhelper (>= 2.1.18), dpkg-dev (>= 1.7.0), groff, libldap2-dev
+Standards-Version: 2.4.0.0
+
+Package: dhcp3-server-ldap
+Architecture: any
+Depends: ${shlibs:Depends}, debconf, debianutils (>= 1.7), dhcp3-server (>= 3.0+3.0.1rc9)
+Conflicts: dhcp, dhcp3-ldap-ntelos
+Description: This is the DHCP server with LDAP patches applied to it

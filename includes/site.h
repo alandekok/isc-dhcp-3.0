@@ -177,3 +177,13 @@
    traces. */
 
 #define TRACING
+
+/* Define this if you want to read your config from LDAP. Read README.ldap
+   about how to set this up */
+
+#define LDAP_CONFIGURATION
+
+/* Define this if you want to enable LDAP over a SSL connection. You will need
+   to add -lcrypto -lssl to the LIBS= line of server/Makefile */
+
+/* #define USE_SSL */

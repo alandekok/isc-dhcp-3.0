@@ -47,6 +47,7 @@ static enum dhcp_token read_string PROTO ((struct parse *));
 static enum dhcp_token read_number PROTO ((int, struct parse *));
 static enum dhcp_token read_num_or_name PROTO ((int, struct parse *));
 static enum dhcp_token intern PROTO ((char *, enum dhcp_token));
+static int read_function PROTO ((struct parse *));
 
 isc_result_t new_parse (cfile, file, inbuf, buflen, name, eolp)
 	struct parse **cfile;
@@ -73,6 +74,10 @@ isc_result_t new_parse (cfile, file, inbuf, buflen, name, eolp)
 	tmp -> warnings_occurred = 0;
 	tmp -> file = file;
 	tmp -> eol_token = eolp;
+
+	if (file != -1) {
+		tmp -> read_function = read_function;;
+	}
 
 	tmp -> bufix = 0;
 	tmp -> buflen = buflen;
@@ -113,22 +118,11 @@ static int get_char (cfile)
 	int c;
 
 	if (cfile -> bufix == cfile -> buflen) {
-		if (cfile -> file != -1) {
-			cfile -> buflen =
-				read (cfile -> file,
-				      cfile -> inbuf, cfile -> bufsiz);
-			if (cfile -> buflen == 0) {
-				c = EOF;
-				cfile -> bufix = 0;
-			} else if (cfile -> buflen < 0) {
-				c = EOF;
-				cfile -> bufix = cfile -> buflen = 0;
-			} else {
-				c = cfile -> inbuf [0];
-				cfile -> bufix = 1;
-			}
-		} else
+		if (cfile -> read_function) {
+			c = cfile -> read_function (cfile);
+		} else {
 			c = EOF;
+		}
 	} else {
 		c = cfile -> inbuf [cfile -> bufix];
 		cfile -> bufix++;
@@ -1128,3 +1122,25 @@ static enum dhcp_token intern (atom, dfv)
 	}
 	return dfv;
 }
+
+
+static int
+read_function (struct parse * cfile)
+{
+  int c;
+
+	cfile -> buflen = read (cfile -> file, cfile -> inbuf, cfile -> bufsiz);
+	if (cfile -> buflen == 0) {
+		c = EOF;
+		cfile -> bufix = 0;
+	} else if (cfile -> buflen < 0) {
+		c = EOF;
+		cfile -> bufix = cfile -> buflen = 0;
+	} else {
+		c = cfile -> inbuf [0];
+		cfile -> bufix = 1;
+	}
+
+	return c;
+}
+

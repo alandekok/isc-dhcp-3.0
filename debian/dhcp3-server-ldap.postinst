@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -e 
+
+# Removes the left over diversions of the old package
+
+if [ "$1" = remove -o "$1" = upgrade ]; then
+	for v in `list_versions`; do
+	        dpkg-divert --package dhcp3-server-ldap --remove \
+			--rename --divert /usr/sbin/dhcpd3-noldap \
+			/usr/sbin/dhcpd3
+	done
+fi

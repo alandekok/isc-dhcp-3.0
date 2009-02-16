@@ -23,12 +23,13 @@
 
 SRC    = dst_support.c dst_api.c hmac_link.c md5_dgst.c base64.c prandom.c
 OBJ    = dst_support.o dst_api.o hmac_link.o md5_dgst.o base64.o prandom.o
+OBJ_NM5= dst_support.o dst_api.o hmac_link.o base64.o prandom.o
 HDRS   = dst_internal.h md5.h md5_locl.h
 
 INCLUDES = $(BINDINC) -I$(TOP)/includes
 CFLAGS = $(DEBUG) $(PREDEFINES) $(INCLUDES) $(COPTS) -DHMAC_MD5 -DMINIRES_LIB
 
-all:	libdst.a
+all:	libdst.a libdst-nomd5.a
 
 install:
 
@@ -37,11 +38,16 @@ libdst.a:	$(OBJ)
 	ar cruv libdst.a $(OBJ)
 	$(RANLIB) libdst.a
 
+libdst-nomd5.a:	$(OBJ_NM5)
+	rm -f libdst-nomd5.a
+	ar cruv libdst-nomd5.a $(OBJ_NM5)
+	$(RANLIB) libdst-nomd5.a
+
 depend:
 	$(MKDEP) $(INCLUDES) $(PREDEFINES) $(SRC)
 
 clean:
-	-rm -f $(OBJ) libdst.a
+	-rm -f $(OBJ) libdst.a libdst-nomd5.a
 
 realclean: clean
 	-rm -f *~ $(CATMANPAGES) $(SEDMANPAGES)
