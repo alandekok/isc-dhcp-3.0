@@ -1,0 +1,36 @@
+paranoia (non-root/chroot) patch for ISC dhcp 3.0
+file to patch: dhcp-3.0/server/dhcpd.c
+
+update from paranoia patch for ISC dhcp 2.0
+
+Adds 3 options:
+
+	-user <user>
+	-group <group>
+	-chroot <chroot_dir>
+
+Notes:
+	-DPARANOIA must be passed as an argument to the --copts option
+	of configure.  Otherwise, the paranoia code will not be compiled
+	in.  Example:  ./configure --copts -DPARANOIA
+
+	The chroot() call has been delayed in order to allow /dev/log to
+	be reopened after the configuration file has been read.  This is
+	beneficial for systems on which /dev/log is a unix domain socket.
+	The main side effect is that dhcpd.conf should be placed in /etc,
+	instead of <chroot_dir>/etc.
+
+	If dhcpd is to be run on a sysV-style architecture (or, more
+	generally, if /dev/log is a character device), one may opt to
+	create the <chroot_dir>/dev/log character device and add
+	-DEARLY_CHROOT to the --copts option of configure (in addition to
+	-DPARANOIA).  This will perform the chroot() call at the earliest
+	convenience (before reading the configuration file).
+
+	If the -user option is used, the lease and pid file directories
+	should be writable to the server process after it drops
+	privileges.
+
+
+ari edelkind (12/10/2001)
+last modified 12/10/2001
